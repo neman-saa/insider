@@ -8,7 +8,7 @@ object Dependencies {
   private val log4catsVersion   = "2.4.0"
 
   object Circe {
-    lazy val circeVersion = "0.14.1"
+    private val circeVersion = "0.14.1"
 
     val circeFs2 = "io.circe" %% "circe-fs2"            % circeVersion
     val core     = "io.circe" %% "circe-core"           % circeVersion
@@ -29,7 +29,7 @@ object Dependencies {
   }
 
   object Http4s {
-    lazy val http4sVersion = "0.23.18"
+    private val http4sVersion = "0.23.18"
 
     val dsl    = "org.http4s" %% "http4s-dsl"          % http4sVersion
     val client = "org.http4s" %% "http4s-ember-client" % http4sVersion
@@ -38,6 +38,7 @@ object Dependencies {
   object Testing {
     private val scalaTestVersion           = "3.2.12"
     private val scalaTestCatsEffectVersion = "1.4.0"
+
     val log                                = "org.typelevel" %% "log4cats-noop" % log4catsVersion
     val test                               = "org.scalatest" %% "scalatest"     % scalaTestVersion
     val catsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion
