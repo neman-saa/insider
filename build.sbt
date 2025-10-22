@@ -4,5 +4,6 @@ ThisBuild / scalaVersion := "2.13.17"
 
 lazy val root = (project in file("."))
   .settings(
-    name := "insider"
+    name := "insider",
+    libraryDependencies ++= Dependencies.dependencies
   )
