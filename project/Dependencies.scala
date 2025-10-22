@@ -1,4 +1,4 @@
-import sbt.*
+import sbt._
 
 object Dependencies {
   lazy val circeVersion               = "0.14.1"
@@ -12,27 +12,54 @@ object Dependencies {
   lazy val slf4jVersion               = "2.0.0"
   lazy val flywayVersion              = "9.16.0"
 
+  private object Circe {
+    val circeFs2 = "io.circe" %% "circe-fs2"            % circeVersion
+    val core     = "io.circe" %% "circe-core"           % circeVersion
+    val generic  = "io.circe" %% "circe-generic"        % circeVersion
+    val extras   = "io.circe" %% "circe-generic-extras" % circeVersion
+    val optics   = "io.circe" %% "circe-optics"         % circeVersion
+    val parser   = "io.circe" %% "circe-parser"         % circeVersion
+  }
+
+  private object Doobie {
+    val core          = "org.tpolecat" %% "doobie-core"           % doobieVersion
+    val hikari        = "org.tpolecat" %% "doobie-hikari"         % doobieVersion
+    val postgres      = "org.tpolecat" %% "doobie-postgres"       % doobieVersion
+    val postgresCirce = "org.tpolecat" %% "doobie-postgres-circe" % doobieVersion
+    val test          = "org.tpolecat" %% "doobie-scalatest"      % doobieVersion
+  }
+
+  private object Http4s {
+    val dsl    = "org.http4s" %% "http4s-dsl"          % http4sVersion
+    val client = "org.http4s" %% "http4s-ember-client" % http4sVersion
+  }
+
+  private object Testing {
+    val log      = "org.typelevel" %% "log4cats-noop"                 % log4catsVersion
+    val test     = "org.scalatest" %% "scalatest"                     % scalaTestVersion
+    val catsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion
+  }
   val dependencies: Seq[ModuleID] = Seq(
-    "org.tpolecat"                  %% "doobie-core"                   % doobieVersion,
-    "org.tpolecat"                  %% "doobie-hikari"                 % doobieVersion,
-    "org.tpolecat"                  %% "doobie-postgres"               % doobieVersion,
-    "org.tpolecat"                  %% "doobie-postgres-circe"         % doobieVersion,
-    "org.tpolecat"                  %% "doobie-scalatest"              % doobieVersion,
-    "org.typelevel"                 %% "cats-effect"                   % catsEffectVersion,
-    "org.http4s"                    %% "http4s-dsl"                    % http4sVersion,
-    "org.http4s"                    %% "http4s-ember-client"           % http4sVersion,
-    "io.circe"                      %% "circe-fs2"                     % circeVersion,
-    "io.circe"                      %% "circe-core"                    % circeVersion,
-    "io.circe"                      %% "circe-generic"                 % circeVersion,
-    "io.circe"                      %% "circe-generic-extras"          % circeVersion,
-    "io.circe"                      %% "circe-optics"                  % circeVersion,
-    "io.circe"                      %% "circe-parser"                  % circeVersion,
-    "com.github.pureconfig"         %% "pureconfig"                    % pureConfigVersion,
-    "org.typelevel"                 %% "log4cats-slf4j"                % log4catsVersion,
-    "org.slf4j"                      % "slf4j-simple"                  % slf4jVersion,
-    "org.flywaydb"                   % "flyway-core"                   % flywayVersion,
-    "org.typelevel"                 %% "log4cats-noop"                 % log4catsVersion            % Test,
-    "org.scalatest"                 %% "scalatest"                     % scalaTestVersion           % Test,
-    "org.typelevel"                 %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion % Test
+    "org.typelevel"         %% "cats-effect"    % catsEffectVersion,
+    "com.github.pureconfig" %% "pureconfig"     % pureConfigVersion,
+    "org.typelevel"         %% "log4cats-slf4j" % log4catsVersion,
+    "org.slf4j"              % "slf4j-simple"   % slf4jVersion,
+    "org.flywaydb"           % "flyway-core"    % flywayVersion,
+    Testing.log % Test,
+    Testing.test % Test,
+    Testing.catsTest % Test,
+    Http4s.dsl,
+    Http4s.client,
+    Doobie.core,
+    Doobie.hikari,
+    Doobie.postgres,
+    Doobie.postgresCirce,
+    Doobie.test,
+    Circe.circeFs2,
+    Circe.core,
+    Circe.extras,
+    Circe.generic,
+    Circe.optics,
+    Circe.parser
   )
 }
