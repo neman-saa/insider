@@ -1,18 +1,15 @@
 import sbt._
 
 object Dependencies {
-  lazy val circeVersion               = "0.14.1"
-  lazy val catsEffectVersion          = "3.3.14"
-  lazy val http4sVersion              = "0.23.18"
-  lazy val doobieVersion              = "1.0.0-RC4"
-  lazy val pureConfigVersion          = "0.17.6"
-  lazy val log4catsVersion            = "2.4.0"
-  lazy val scalaTestVersion           = "3.2.12"
-  lazy val scalaTestCatsEffectVersion = "1.4.0"
-  lazy val slf4jVersion               = "2.0.0"
-  lazy val flywayVersion              = "9.16.0"
+  private val catsEffectVersion = "3.3.14"
+  private val pureConfigVersion = "0.17.6"
+  private val slf4jVersion      = "2.0.0"
+  private val flywayVersion     = "9.16.0"
+  private val log4catsVersion   = "2.4.0"
 
-  private object Circe {
+  object Circe {
+    lazy val circeVersion = "0.14.1"
+
     val circeFs2 = "io.circe" %% "circe-fs2"            % circeVersion
     val core     = "io.circe" %% "circe-core"           % circeVersion
     val generic  = "io.circe" %% "circe-generic"        % circeVersion
@@ -21,7 +18,9 @@ object Dependencies {
     val parser   = "io.circe" %% "circe-parser"         % circeVersion
   }
 
-  private object Doobie {
+  object Doobie {
+    private val doobieVersion = "1.0.0-RC4"
+
     val core          = "org.tpolecat" %% "doobie-core"           % doobieVersion
     val hikari        = "org.tpolecat" %% "doobie-hikari"         % doobieVersion
     val postgres      = "org.tpolecat" %% "doobie-postgres"       % doobieVersion
@@ -29,37 +28,25 @@ object Dependencies {
     val test          = "org.tpolecat" %% "doobie-scalatest"      % doobieVersion
   }
 
-  private object Http4s {
+  object Http4s {
+    lazy val http4sVersion = "0.23.18"
+
     val dsl    = "org.http4s" %% "http4s-dsl"          % http4sVersion
     val client = "org.http4s" %% "http4s-ember-client" % http4sVersion
   }
 
-  private object Testing {
-    val log      = "org.typelevel" %% "log4cats-noop"                 % log4catsVersion
-    val test     = "org.scalatest" %% "scalatest"                     % scalaTestVersion
+  object Testing {
+    private val scalaTestVersion           = "3.2.12"
+    private val scalaTestCatsEffectVersion = "1.4.0"
+    val log                                = "org.typelevel" %% "log4cats-noop" % log4catsVersion
+    val test                               = "org.scalatest" %% "scalatest"     % scalaTestVersion
     val catsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion
   }
-  val dependencies: Seq[ModuleID] = Seq(
-    "org.typelevel"         %% "cats-effect"    % catsEffectVersion,
-    "com.github.pureconfig" %% "pureconfig"     % pureConfigVersion,
-    "org.typelevel"         %% "log4cats-slf4j" % log4catsVersion,
-    "org.slf4j"              % "slf4j-simple"   % slf4jVersion,
-    "org.flywaydb"           % "flyway-core"    % flywayVersion,
-    Testing.log % Test,
-    Testing.test % Test,
-    Testing.catsTest % Test,
-    Http4s.dsl,
-    Http4s.client,
-    Doobie.core,
-    Doobie.hikari,
-    Doobie.postgres,
-    Doobie.postgresCirce,
-    Doobie.test,
-    Circe.circeFs2,
-    Circe.core,
-    Circe.extras,
-    Circe.generic,
-    Circe.optics,
-    Circe.parser
-  )
+
+  val catsEffect = "org.typelevel"         %% "cats-effect"    % catsEffectVersion
+  val pureConfig = "com.github.pureconfig" %% "pureconfig"     % pureConfigVersion
+  val logger     = "org.typelevel"         %% "log4cats-slf4j" % log4catsVersion
+  val loggerCats = "org.slf4j"              % "slf4j-simple"   % slf4jVersion
+  val migrations = "org.flywaydb"           % "flyway-core"    % flywayVersion
+
 }
