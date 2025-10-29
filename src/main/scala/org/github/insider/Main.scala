@@ -3,8 +3,6 @@ package org.github.insider
 import cats.effect.{IO, IOApp}
 import org.github.insider.polymarket.client.EventsClientImpl
 import org.http4s.ember.client.EmberClientBuilder
-import org.http4s.client.middleware.Logger
-import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import java.time.LocalDateTime
