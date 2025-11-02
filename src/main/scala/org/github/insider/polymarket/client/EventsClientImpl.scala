@@ -2,7 +2,7 @@ package org.github.insider.polymarket.client
 
 import cats.effect.Async
 import cats.syntax.all._
-import org.github.insider.polymarket.domain.Event
+import org.github.insider.polymarket.domain.{Event, Tag}
 import org.http4s.circe.CirceEntityCodec.circeEntityDecoder
 import org.http4s.client.Client
 import org.http4s.{Status, Uri}
@@ -17,13 +17,14 @@ private class EventsClientImpl[F[_]: Async](
   logger: Logger[F],
 ) extends EventsClient[F] {
 
-  override def getEvents(startDateMax: LocalDateTime, endDateMax: LocalDateTime): F[List[Event]] = {
+  override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] = {
     val uri: Uri =
       GammaApiHost
         .addSegment("events")
-        .withQueryParam("start_date_max", s"${startDateMax}Z")
-        .withQueryParam("end_date_max", s"${startDateMax}Z")
-        .withQueryParam("limit", 1)
+        .withQueryParam("tag_id", tag.id)
+        .withQueryParam("limit", limit)
+        .withQueryParam("offset", offset)
+        .withQueryParam("order", "creationDate")
 
     client.get[List[Event]](uri) {
       case Status.Successful(response) =>

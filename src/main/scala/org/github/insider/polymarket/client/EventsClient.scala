@@ -1,8 +1,7 @@
 package org.github.insider.polymarket.client
 
-import org.github.insider.polymarket.domain.Event
-import java.time.LocalDateTime
+import org.github.insider.polymarket.domain.{Event, Tag}
 
 trait EventsClient[F[_]] {
-  def getEvents(startDateMax: LocalDateTime, endDateMax: LocalDateTime): F[List[Event]]
+  def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]]
 }
