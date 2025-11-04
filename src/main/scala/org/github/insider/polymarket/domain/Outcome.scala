@@ -2,7 +2,15 @@ package org.github.insider.polymarket.domain
 
 import io.circe.Decoder
 
-sealed trait Outcome
+sealed trait Outcome {
+  import Outcome._
+
+  override def toString: String = this match {
+    case Yes => "Yes"
+    case No => "No"
+    case Other(_) => "Other"
+  }
+}
 
 object Outcome {
   final case object Yes extends Outcome

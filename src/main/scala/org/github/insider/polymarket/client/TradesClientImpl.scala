@@ -3,7 +3,7 @@ package org.github.insider.polymarket.client
 import cats.syntax.all._
 import cats.effect.Async
 import org.github.insider.polymarket.domain.Trade
-import org.http4s.{Status, Uri}
+import org.http4s.Status
 import org.http4s.client.{Client, middleware}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -14,15 +14,21 @@ private class TradesClientImpl[F[_]: Async](
   logger: Logger[F],
 ) extends TradesClient[F] {
 
-  override def getTradesHistoryByMarket(conditionId: String): F[List[Trade]] = {
-    val uri: Uri = DataApiHost.addSegment("trades").withQueryParam("market", conditionId)
+  override def getTradesHistoryByMarket(conditionId: String, offset: Int, limit: Int): F[List[Trade]] = {
+    val uri = DataApiHost
+      .addSegment("trades")
+      .withQueryParam("market", conditionId)
+      .withQueryParam("limit", limit)
+      .withQueryParam("offset", offset)
+      .withQueryParam("order", "createdAt")
 
     client.get[List[Trade]](uri) {
       case Status.Successful(response) =>
         response.as[List[Trade]]
       case other =>
-        logger.error(s"Unsuccessful response received while fetching trades history for market $conditionId: $other") >>
-          Async[F].raiseError(new Throwable("todo"))
+        logger.error(
+          s"Unsuccessful response received while fetching trades history for market $conditionId: $other"
+        ) >> Async[F].raiseError(new RuntimeException("Failed to fetch trades history"))
     }
   }
 }
