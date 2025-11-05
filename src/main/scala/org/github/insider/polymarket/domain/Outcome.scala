@@ -6,9 +6,9 @@ sealed trait Outcome {
   import Outcome._
 
   override def toString: String = this match {
-    case Yes => "Yes"
-    case No => "No"
-    case Other(_) => "Other"
+    case Yes => "YES"
+    case No => "NO"
+    case Other(_) => "OTHER"
   }
 }
 

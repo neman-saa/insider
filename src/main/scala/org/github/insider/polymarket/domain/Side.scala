@@ -11,6 +11,6 @@ object Side {
   implicit val circeDecoder: Decoder[Side] =
     Decoder[String].map {
       case "BUY" => Side.Buy
-      case "BUY" => Side.Sell
+      case "SELL" => Side.Sell
     }
 }

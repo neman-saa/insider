@@ -29,13 +29,16 @@ private[workers] class TradeExtractorWorker[F[_]: Async](
           )
           _ <- trades.traverse(trade =>
             tradesAggregated.update { map =>
-              val (size, totalPrice) = map.getOrElse((trade.wallet, trade.token.id), (0, 0))
+              val (size, totalPrice) = map.getOrElse((trade.wallet, trade.token.id), (BigDecimal(0), BigDecimal(0)))
               val sign = trade.side match {
                 case Buy  => 1
                 case Sell => -1
               }
-              val newWallet = (size + trade.size * sign, totalPrice + trade.size * trade.price * sign)
-              map + ((trade.wallet, trade.token.id) -> newWallet)
+              val newRes = (
+                size + trade.size * BigDecimal(sign),
+                totalPrice + trade.size * trade.price * BigDecimal(sign)
+              )
+              map + ((trade.wallet, trade.token.id) -> newRes)
             }
           )
         } yield ()

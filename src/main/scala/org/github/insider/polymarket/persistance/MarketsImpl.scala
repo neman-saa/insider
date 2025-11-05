@@ -7,6 +7,7 @@ import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import cats.syntax.all._
 import doobie.implicits._
+import doobie.postgres.implicits._
 import doobie.util.update.Update
 import org.github.insider.polymarket.domain.Outcome.Other
 
@@ -57,7 +58,7 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
          |  ${market.question},
          |  ${market.volume.value},
          |  ${market.tokens.map(_.id)}
-         |);
+         |) ON CONFLICT (conditionId) DO NOTHING;
        """.stripMargin.update.run.void
 
     val tradesForDb = map.toList.map(x => (x._1._1,x._1._1,x._2._1,x._2._2))
