@@ -12,9 +12,11 @@ object DbMigrations {
 
   def migrate[F[_]: Sync](config: DbConfig): F[Int] = {
     val loggerF = Slf4jLogger.create[F]
-    loggerF.flatMap{ logger =>
-      logger.info("Running migrations from locations: " +
-        config.migrationsLocations.mkString(", ")) >> {
+    loggerF.flatMap { logger =>
+      logger.info(
+        "Running migrations from locations: " +
+          config.migrationsLocations.mkString(", ")
+      ) >> {
         val count = unsafeMigrate(config)
         logger.info(s"Executed $count migrations") >> count.pure[F]
       }
@@ -23,7 +25,8 @@ object DbMigrations {
   }
 
   private def unsafeMigrate(config: DbConfig): Int = {
-    val m: FluentConfiguration = Flyway.configure
+    val m: FluentConfiguration = Flyway
+      .configure
       .dataSource(
         config.url,
         config.username,
@@ -33,7 +36,8 @@ object DbMigrations {
       .outOfOrder(false)
       .table(config.migrationsTable)
       .locations(
-        config.migrationsLocations
+        config
+          .migrationsLocations
           .map(new Location(_)): _*
       )
       .baselineOnMigrate(true)

@@ -28,7 +28,12 @@ private class EventsClientImpl[F[_]: Async](
 
     client.get[List[Event]](uri) {
       case Status.Successful(response) =>
-        response.as[List[Event]]
+        response.attemptAs[List[Event]].value.flatMap {
+          case Left(_) =>
+            logger.error(s"Unable to parse getEventsByTag response. Request params: ${uri.params}").as(List.empty)
+          case Right(events) =>
+            events.pure[F]
+        }
       case other =>
         logger.error(s"Unsuccessful response received while fetching events: $other") >>
           Async[F].raiseError(new Throwable("todo"))

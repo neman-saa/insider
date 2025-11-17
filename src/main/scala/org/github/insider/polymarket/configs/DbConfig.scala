@@ -11,6 +11,6 @@ case class DbConfig(
   password: String,
   migrationsTable: String,
   migrationsLocations: List[String]
-){
+) {
   def url: String = s"jdbc:postgresql://$host:$port/$name${if (sslModeRequire) "?sslmode=require" else ""}"
 }

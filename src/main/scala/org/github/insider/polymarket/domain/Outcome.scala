@@ -6,8 +6,8 @@ sealed trait Outcome {
   import Outcome._
 
   override def toString: String = this match {
-    case Yes => "YES"
-    case No => "NO"
+    case Yes      => "YES"
+    case No       => "NO"
     case Other(_) => "OTHER"
   }
 }

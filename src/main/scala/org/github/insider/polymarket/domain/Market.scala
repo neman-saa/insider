@@ -11,7 +11,6 @@ final case class Market(
   tokens: List[Token],
 )
 
-
 object Market {
   implicit val circeDecoder: Decoder[Market] =
     Decoder.instance[Market] { c =>

@@ -61,7 +61,9 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
          |) ON CONFLICT (conditionId) DO NOTHING;
        """.stripMargin.update.run.void
 
-    val tradesForDb = map.toList.map(x => (x._1._1,x._1._1,x._2._1,x._2._2))
+    val tradesForDb = map
+      .toList
+      .map(x => (x._1._1, x._1._1, x._2._1, x._2._2))
       .map(values => TradeForDb.fromMarket(market, values))
     val insertTradesConnection =
       Update[TradeForDb](
