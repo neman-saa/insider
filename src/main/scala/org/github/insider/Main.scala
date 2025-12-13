@@ -22,6 +22,7 @@ object Main extends IOApp.Simple {
       eventClient <- EventsClientImpl.of[IO](client).toResource
       tagsClient  <- TagsClientImpl.of[IO](client).toResource
       tradeClient <- TradesClientImpl.of[IO](client).toResource
+      _           <- DbMigrations.migrate[IO](config.dbConfig).toResource
     } yield (eventClient, tagsClient, tradeClient, marketsDb)
 
     resource use {
@@ -42,10 +43,17 @@ object Main extends IOApp.Simple {
             .map(_.toMap)
           _ <- logger.info(eventsPerTag.toString)
 
-          tradesExtractor <- TradeExtractorWorkerGroup.of[IO](1, tradeClient)
+          tradesExtractor <- TradeExtractorWorkerGroup.of[IO](100, tradeClient)
 
-          allMarkets = eventsPerTag.values.flatten.flatMap(_.markets).toList
+          allMarkets     = eventsPerTag.values.flatten.flatMap(_.markets).toList
+          properMarkets <- tradesExtractor.tradesByAllMarkets(allMarkets, maxDepth = None, limit = 1000)
 
+          _ <- logger.info(s"Found ${properMarkets.length} markets: ${properMarkets.map(_._1)}")
+          _ <- logger.info("Started persist markets")
+
+          _ <- properMarkets.traverse(market => marketsDb.addMarket(market._1, market._2))
+
+          _ <- logger.info("Finished persisting markets")
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

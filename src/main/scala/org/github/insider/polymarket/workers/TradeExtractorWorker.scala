@@ -24,23 +24,30 @@ private[workers] class TradeExtractorWorker[F[_]: Async](
       case offset =>
         for {
           trades <- tradesClient.getTradesHistoryByMarket(id, offset, limit)
-          _ <- logger.info(
-            s"[Trade worker: $workerNumber] received ${trades.length} trades, current offset: $offset, market id: $id"
-          )
-          _ <- trades.traverse(trade =>
-            tradesAggregated.update { map =>
-              val (size, totalPrice) = map.getOrElse((trade.wallet, trade.token.id), (BigDecimal(0), BigDecimal(0)))
-              val sign = trade.side match {
-                case Buy  => 1
-                case Sell => -1
-              }
-              val newRes = (
-                size + trade.size * BigDecimal(sign),
-                totalPrice + trade.size * trade.price * BigDecimal(sign)
-              )
-              map + ((trade.wallet, trade.token.id) -> newRes)
-            }
-          )
+          _ <- trades match {
+            case Nil => ().pure[F]
+            case trades =>
+              (for {
+                _ <- logger.info(
+                  s"[Trade worker: $workerNumber] received ${trades.length} trades, current offset: $offset, market id: $id"
+                )
+                _ <- trades.traverse(trade =>
+                  tradesAggregated.update { map =>
+                    val (size, totalPrice) =
+                      map.getOrElse((trade.wallet, trade.token.id), (BigDecimal(0), BigDecimal(0)))
+                    val sign = trade.side match {
+                      case Buy  => 1
+                      case Sell => -1
+                    }
+                    val newRes = (
+                      size + trade.size * BigDecimal(sign),
+                      totalPrice + trade.size * trade.price * BigDecimal(sign)
+                    )
+                    map + ((trade.wallet, trade.token.id) -> newRes)
+                  }
+                )
+              } yield ()) >> run(limit, maxOffSet)
+          }
         } yield ()
     }
   }
