@@ -2,11 +2,12 @@ package org.github.insider
 
 import cats.effect.{IO, IOApp}
 import cats.syntax.all._
-import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl, TradesClientImpl}
+import org.github.insider.alchemy.client.TransfersClientImpl
+import org.github.insider.alchemy.domain.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.configs.syntax.sourceOps
-import org.github.insider.polymarket.persistance.{Database, DbMigrations, MarketsImpl}
-import org.github.insider.polymarket.workers.{TagsExtractorWorkerGroup, TradeExtractorWorkerGroup}
+import org.github.insider.polymarket.workers.TagsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import pureconfig.ConfigSource
@@ -15,18 +16,15 @@ import pureconfig.generic.auto._
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
     val resource = for {
-      config      <- ConfigSource.default.loadF[IO, MainConfig].toResource
-      transactor  <- Database.postgresResource[IO](config.dbConfig)
-      marketsDb   <- MarketsImpl.of[IO](transactor).toResource
-      client      <- EmberClientBuilder.default[IO].build
-      eventClient <- EventsClientImpl.of[IO](client).toResource
-      tagsClient  <- TagsClientImpl.of[IO](client).toResource
-      tradeClient <- TradesClientImpl.of[IO](client).toResource
-      _           <- DbMigrations.migrate[IO](config.dbConfig).toResource
-    } yield (eventClient, tagsClient, tradeClient, marketsDb)
+      config          <- ConfigSource.default.loadF[IO, MainConfig].toResource
+      client          <- EmberClientBuilder.default[IO].build
+      eventClient     <- EventsClientImpl.of[IO](client).toResource
+      tagsClient      <- TagsClientImpl.of[IO](client).toResource
+      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+    } yield (eventClient, tagsClient, transfersClient)
 
     resource use {
-      case (eventClient, tagsClient, tradeClient, marketsDb) =>
+      case (eventClient, tagsClient, transfersClient) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -36,24 +34,23 @@ object Main extends IOApp.Simple {
           tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
           relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
 
+          // For testing purposes, 10 events are fetched for each tag.
           eventsPerTag <- relevantTags
             .parTraverse { tag =>
               eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
             }
             .map(_.toMap)
-          _ <- logger.info(eventsPerTag.toString)
 
-          tradesExtractor <- TradeExtractorWorkerGroup.of[IO](100, tradeClient)
+          // For testing purposes, all transfers from 0x40B1581 block are fetched with particular params
+          transfers <- transfersClient.getAssetTransfers(
+            fromBlock    = Some("0x40B1581"),
+            toBlock      = Some("0x40B1581"),
+            fromAddress  = Some("0xc5d563a36ae78145c45a50134d48a1215220f80a"),
+            toAddress    = None,
+            category     = Set(ERC20, ERC1155),
+            withMetadata = None,
+          )
 
-          allMarkets     = eventsPerTag.values.flatten.flatMap(_.markets).toList
-          properMarkets <- tradesExtractor.tradesByAllMarkets(allMarkets, maxDepth = None, limit = 1000)
-
-          _ <- logger.info(s"Found ${properMarkets.length} markets: ${properMarkets.map(_._1)}")
-          _ <- logger.info("Started persist markets")
-
-          _ <- properMarkets.traverse(market => marketsDb.addMarket(market._1, market._2))
-
-          _ <- logger.info("Finished persisting markets")
           _ <- logger.info("Shutting down application...")
         } yield ()
     }
