@@ -24,6 +24,7 @@ private class TransfersClientImpl[F[_]: Async](
     toAddress: Option[String],
     category: Set[TokenCategory],
     withMetadata: Option[Boolean],
+
   ): F[List[Transfer]] = {
     val uri: Uri =
       PolygonMainnetHost
@@ -64,5 +65,6 @@ object TransfersClientImpl {
     val clientWithLogging = middleware.Logger[F](logBody = true, logHeaders = true)(client)
 
     Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](clientWithLogging, logger, apiKey))
+
   }
 }
