@@ -10,12 +10,13 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 class TradeWorkerGroup[F[_]: Async: Parallel](
   logger: Logger[F],
   client: TransfersClient[F],
-  ctfAddress: String
+  ctfAddress: String,
+  step: Int
 )(nWorkers: Int) {
   def run(fromBlock: Int, toBlock: Int): F[Unit] = for {
     _         <- logger.info("Application started parsing trades")
     fromBlock <- Ref.of[F, Int](fromBlock)
-    workers   <- (1 to nWorkers).toList.traverse(i => TradeWorker(fromBlock, toBlock, client, ctfAddress)(i))
+    workers   <- (1 to nWorkers).toList.traverse(i => TradeWorker(fromBlock, toBlock, client, ctfAddress, step)(i))
     _         <- workers.parTraverse_(_.run)
     _         <- logger.info("Application finished parsing trades")
   } yield ()
@@ -24,7 +25,8 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
 object TradeWorkerGroup {
   def apply[F[_]: Async: Parallel](
     client: TransfersClient[F],
-    ctfAddress: String
+    ctfAddress: String,
+    step: Int
   )(nWorkers: Int): F[TradeWorkerGroup[F]] =
-    Slf4jLogger.create[F].map(logger => new TradeWorkerGroup(logger, client, ctfAddress)(nWorkers))
+    Slf4jLogger.create[F].map(logger => new TradeWorkerGroup(logger, client, ctfAddress, step)(nWorkers))
 }

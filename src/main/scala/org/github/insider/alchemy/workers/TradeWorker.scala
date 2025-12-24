@@ -2,26 +2,29 @@ package org.github.insider.alchemy.workers
 
 import cats.effect.Ref
 import cats.effect.kernel.Async
+import cats.effect.std.Queue
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.polymarket.domain.Trade
 
 class TradeWorker[F[_]: Async](
   fromBlock: Ref[F, Int],
   toBlock: Int,
   logger: Logger[F],
   client: TransfersClient[F],
-  ctfAddress: String
+  ctfAddress: String,
+  step: Int,
+  tradesBuffer: Queue[F, List[Trade]]
 )(workerNumber: Int) {
-
   def run: F[Unit] = for {
-    fromBlock <- fromBlock.getAndUpdate(_ + 100)
+    fromBlock <- fromBlock.getAndUpdate(_ + step)
     _ <-
       if (fromBlock > toBlock) logger.info(s"[worker-$workerNumber] Finished, no more trades.")
-      else runRange(fromBlock, 100)
+      else runRange(fromBlock, step)
   } yield ()
 
   def runRange(fromBlock: Int, nBlocks: Int): F[Unit] = {
@@ -42,11 +45,11 @@ class TradeWorker[F[_]: Async](
         page         = page
       )
       transfersAll = transfers ++ resp.transfers.flatMap(AssetTransfer.fromTransfer)
-      _ <- resp.page match {
+      res <- resp.page match {
         case None        => transfersAll.pure[F]
         case a @ Some(_) => rec(transfersAll, a, toAddress, fromAddress)
       }
-    } yield ()
+    } yield res
 
     for {
       transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
@@ -56,17 +59,26 @@ class TradeWorker[F[_]: Async](
         .values
         .toList
         .flatMap(AssetTransfer.getTradesFromBlock)
-      _ <- ().pure[F] // some trades logic
+      _ <- tradesBuffer.offer(trades)
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
     } yield ()
   }
 }
 
 object TradeWorker {
-  def apply[F[_]: Async](fromBlock: Ref[F, Int], toBlock: Int, transfersClient: TransfersClient[F], ctfAddress: String)(
+  def apply[F[_]: Async](
+    fromBlock: Ref[F, Int],
+    toBlock: Int,
+    transfersClient: TransfersClient[F],
+    ctfAddress: String,
+    step: Int,
+    buffer: Queue[F, List[Trade]]
+  )(
     workerNumber: Int
   ): F[TradeWorker[F]] =
     Slf4jLogger
       .create[F]
-      .map(logger => new TradeWorker[F](fromBlock, toBlock, logger, transfersClient, ctfAddress)(workerNumber))
+      .map(logger =>
+        new TradeWorker[F](fromBlock, toBlock, logger, transfersClient, ctfAddress, step, buffer)(workerNumber)
+      )
 }
