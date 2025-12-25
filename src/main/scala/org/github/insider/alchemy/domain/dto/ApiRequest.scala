@@ -44,7 +44,7 @@ object ApiRequest {
       toAddress    = toAddress,
       category     = category,
       withMetadata = withMetadata,
-      page = page
+      page         = page
     )
 
     getAssetTransfersRequest(payload)

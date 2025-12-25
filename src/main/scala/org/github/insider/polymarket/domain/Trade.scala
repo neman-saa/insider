@@ -8,5 +8,3 @@ case class Trade(
   price: BigDecimal,
   timestamp: String
 )
-
-

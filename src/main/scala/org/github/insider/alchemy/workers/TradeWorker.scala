@@ -2,14 +2,13 @@ package org.github.insider.alchemy.workers
 
 import cats.effect.Ref
 import cats.effect.kernel.Async
-import cats.effect.std.Queue
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
-import org.github.insider.polymarket.domain.Trade
+import org.github.insider.alchemy.services.Trades
 
 class TradeWorker[F[_]: Async](
   fromBlock: Ref[F, Int],
@@ -18,7 +17,7 @@ class TradeWorker[F[_]: Async](
   client: TransfersClient[F],
   ctfAddress: String,
   step: Int,
-  tradesBuffer: Queue[F, List[Trade]]
+  tradesService: Trades[F]
 )(workerNumber: Int) {
   def run: F[Unit] = for {
     fromBlock <- fromBlock.getAndUpdate(_ + step)
@@ -54,12 +53,11 @@ class TradeWorker[F[_]: Async](
     for {
       transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
       transfersFrom <- rec(Nil, None, Some(ctfAddress), None)
-      trades = (transfersTo ++ transfersFrom)
+      transfers = (transfersTo ++ transfersFrom)
         .groupBy(_.blockNum)
         .values
         .toList
-        .flatMap(AssetTransfer.getTradesFromBlock)
-      _ <- tradesBuffer.offer(trades)
+      _ <- transfers.traverse(tradesService.exec)
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
     } yield ()
   }
@@ -72,13 +70,15 @@ object TradeWorker {
     transfersClient: TransfersClient[F],
     ctfAddress: String,
     step: Int,
-    buffer: Queue[F, List[Trade]]
+    tradesService: Trades[F]
   )(
     workerNumber: Int
   ): F[TradeWorker[F]] =
     Slf4jLogger
       .create[F]
       .map(logger =>
-        new TradeWorker[F](fromBlock, toBlock, logger, transfersClient, ctfAddress, step, buffer)(workerNumber)
+        new TradeWorker[F](fromBlock, toBlock, logger, transfersClient, ctfAddress, step, tradesService)(
+          workerNumber
+        )
       )
 }

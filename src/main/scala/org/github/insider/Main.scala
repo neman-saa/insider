@@ -3,7 +3,9 @@ package org.github.insider
 import cats.effect.{IO, IOApp}
 import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClientImpl
-import org.github.insider.alchemy.domain.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.alchemy.services.TradesImpl
+import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.configs.syntax.sourceOps
@@ -16,15 +18,17 @@ import pureconfig.generic.auto._
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
     val resource = for {
-      config          <- ConfigSource.default.loadF[IO, MainConfig].toResource
-      client          <- EmberClientBuilder.default[IO].build
-      eventClient     <- EventsClientImpl.of[IO](client).toResource
-      tagsClient      <- TagsClientImpl.of[IO](client).toResource
-      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
-    } yield (eventClient, tagsClient, transfersClient)
+      config           <- ConfigSource.default.loadF[IO, MainConfig].toResource
+      client           <- EmberClientBuilder.default[IO].build
+      eventClient      <- EventsClientImpl.of[IO](client).toResource
+      tagsClient       <- TagsClientImpl.of[IO](client).toResource
+      transfersClient  <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      trades           <- TradesImpl.of[IO](config.alchemy.ctfAddress, config.alchemy.burnMintAddress).toResource
+      tradeWorkerGroup <- TradeWorkerGroup.of[IO](transfersClient, trades, config.alchemy.ctfAddress, 25)(10).toResource
+    } yield (eventClient, tagsClient, transfersClient, tradeWorkerGroup)
 
     resource use {
-      case (eventClient, tagsClient, transfersClient) =>
+      case (eventClient, tagsClient, transfersClient, tradeWorkerGroup) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -49,8 +53,10 @@ object Main extends IOApp.Simple {
             toAddress    = None,
             category     = Set(ERC20, ERC1155),
             withMetadata = None,
+            page         = None
           )
 
+          _ <- tradeWorkerGroup.run(80701191, 80764777)
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

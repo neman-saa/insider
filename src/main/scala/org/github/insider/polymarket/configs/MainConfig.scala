@@ -10,5 +10,7 @@ final case class MainConfig(
 object MainConfig {
   final case class AlchemyConfig(
     apiKey: String,
+    ctfAddress: String,
+    burnMintAddress: String
   )
 }

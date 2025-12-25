@@ -38,7 +38,7 @@ private class TransfersClientImpl[F[_]: Async](
       toAddress    = toAddress,
       category     = category,
       withMetadata = withMetadata,
-      page = page
+      page         = page
     )
 
     val request: Request[F] = Request[F](
@@ -50,7 +50,9 @@ private class TransfersClientImpl[F[_]: Async](
       case Status.Successful(response) =>
         response.attemptAs[ApiResponse[GetAssetTransfersApiResponseBody]].value.flatMap {
           case Left(_) =>
-            logger.error(s"Unable to parse transfers response. Request params: ${uri.params}").as(List.empty)
+            logger
+              .error(s"Unable to parse transfers response. Request params: ${uri.params}")
+              .as(GetAssetTransfersApiResponseBody(Nil, None))
           case Right(transfersApiResponse) =>
             transfersApiResponse.result.pure[F]
         }
