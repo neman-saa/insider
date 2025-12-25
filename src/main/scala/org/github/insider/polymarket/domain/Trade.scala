@@ -6,5 +6,6 @@ case class Trade(
   assetId: String,
   size: BigDecimal,
   price: BigDecimal,
-  timestamp: String
+  timestamp: Option[String],
+  hash: String
 )

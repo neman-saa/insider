@@ -24,7 +24,7 @@ object Main extends IOApp.Simple {
       tagsClient       <- TagsClientImpl.of[IO](client).toResource
       transfersClient  <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
       trades           <- TradesImpl.of[IO](config.alchemy.ctfAddress, config.alchemy.burnMintAddress).toResource
-      tradeWorkerGroup <- TradeWorkerGroup.of[IO](transfersClient, trades, config.alchemy.ctfAddress, 25)(10).toResource
+      tradeWorkerGroup <- TradeWorkerGroup.of[IO](transfersClient, trades, config.alchemy.ctfAddress, 25)(1).toResource
     } yield (eventClient, tagsClient, transfersClient, tradeWorkerGroup)
 
     resource use {
@@ -36,17 +36,17 @@ object Main extends IOApp.Simple {
           keywords = List("stock", "google", "apple", "revenue", "report")
 
           tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
-          relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
+          /*relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)*/
 
           // For testing purposes, 10 events are fetched for each tag.
-          eventsPerTag <- relevantTags
+          /*eventsPerTag <- relevantTags
             .parTraverse { tag =>
               eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
             }
-            .map(_.toMap)
+            .map(_.toMap)*/
 
           // For testing purposes, all transfers from 0x40B1581 block are fetched with particular params
-          transfers <- transfersClient.getAssetTransfers(
+          /*transfers <- transfersClient.getAssetTransfers(
             fromBlock    = Some("0x40B1581"),
             toBlock      = Some("0x40B1581"),
             fromAddress  = Some("0xc5d563a36ae78145c45a50134d48a1215220f80a"),
@@ -54,9 +54,9 @@ object Main extends IOApp.Simple {
             category     = Set(ERC20, ERC1155),
             withMetadata = None,
             page         = None
-          )
+          )*/
 
-          _ <- tradeWorkerGroup.run(80701191, 80764777)
+          _ <- tradeWorkerGroup.run(80701191, 80701192)
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

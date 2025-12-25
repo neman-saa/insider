@@ -23,7 +23,7 @@ class TradeWorker[F[_]: Async](
     fromBlock <- fromBlock.getAndUpdate(_ + step)
     _ <-
       if (fromBlock > toBlock) logger.info(s"[worker-$workerNumber] Finished, no more trades.")
-      else runRange(fromBlock, step)
+      else runRange(fromBlock, Math.min(step - 1, toBlock - fromBlock))
   } yield ()
 
   def runRange(fromBlock: Int, nBlocks: Int): F[Unit] = {
@@ -35,8 +35,8 @@ class TradeWorker[F[_]: Async](
       fromAddress: Option[String]
     ): F[List[AssetTransfer]] = for {
       resp <- client.getAssetTransfers(
-        fromBlock    = Some(fromBlock.toHexString),
-        toBlock      = Some((fromBlock + nBlocks - 1).toHexString),
+        fromBlock    = Some("0x" + fromBlock.toHexString),
+        toBlock      = Some("0x" + (fromBlock + nBlocks).toHexString),
         fromAddress  = fromAddress,
         toAddress    = toAddress,
         category     = Set(ERC1155, ERC20),
@@ -44,7 +44,7 @@ class TradeWorker[F[_]: Async](
         page         = page
       )
       transfersAll = transfers ++ resp.transfers.flatMap(AssetTransfer.fromTransfer)
-      res <- resp.page match {
+      res <- resp.pageKey match {
         case None        => transfersAll.pure[F]
         case a @ Some(_) => rec(transfersAll, a, toAddress, fromAddress)
       }

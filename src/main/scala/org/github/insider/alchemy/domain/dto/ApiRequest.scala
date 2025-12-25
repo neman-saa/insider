@@ -20,7 +20,7 @@ object ApiRequest {
     toAddress: Option[String],
     category: Set[TokenCategory],
     withMetadata: Option[Boolean],
-    page: Option[String]
+    pageKey: Option[String]
   )
 
   object GetAssetTransfersPayload {
@@ -44,7 +44,7 @@ object ApiRequest {
       toAddress    = toAddress,
       category     = category,
       withMetadata = withMetadata,
-      page         = page
+      pageKey      = page
     )
 
     getAssetTransfersRequest(payload)

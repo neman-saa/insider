@@ -12,7 +12,7 @@ object ApiResponse {
 
   final case class GetAssetTransfersApiResponseBody(
     transfers: List[Transfer],
-    page: Option[String]
+    pageKey: Option[String]
   )
 
   object GetAssetTransfersApiResponseBody {

@@ -118,7 +118,8 @@ object AssetTransfer {
               assetId,
               BigDecimal(BigInt(erc1155.value.drop(2), 16)),
               tokensSum / buySum,
-              erc1155.blockTimestamp.get
+              erc1155.blockTimestamp,
+              erc1155.hash
             )
           )
           trades
@@ -145,7 +146,8 @@ object AssetTransfer {
               assetId,
               BigDecimal(BigInt(erc1155.value.drop(2), 16)),
               tokensSum / buySum,
-              erc1155.blockTimestamp.get
+              erc1155.blockTimestamp,
+              erc1155.hash
             )
           )
           trades
@@ -164,7 +166,8 @@ object AssetTransfer {
               .filter(x => x.from == erc1155.to && x.to == erc1155.from)
               .head
               .value,
-            erc1155.blockTimestamp.get
+            erc1155.blockTimestamp,
+            erc1155.hash
           )
         )
         trades

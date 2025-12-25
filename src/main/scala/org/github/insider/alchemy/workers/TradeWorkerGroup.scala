@@ -17,6 +17,7 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
 )(nWorkers: Int) {
   def run(fromBlock: Int, toBlock: Int): F[Unit] = for {
     _         <- logger.info("Application started parsing trades")
+    _         <- logger.info(s"From: 0x${fromBlock.toHexString}, to: 0x${toBlock.toHexString}")
     fromBlock <- Ref.of[F, Int](fromBlock)
     workers <- (1 to nWorkers)
       .toList
