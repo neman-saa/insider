@@ -1,22 +1,25 @@
-package org.github.insider.alchemy.services
+package org.github.insider.alchemy.processors
 
-import cats.effect.Async
-import doobie.Transactor
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTransfer}
 import org.github.insider.polymarket.domain.Trade
-import org.typelevel.log4cats.Logger
-import org.typelevel.log4cats.slf4j.Slf4jLogger
-import cats.syntax.all._
 
-class TradesImpl[F[_]: Async](
-  /*transactor: Transactor[F], */ logger: Logger[F],
+private class TransfersProcessorImpl(
   ctfAddress: String,
   burnMintAddress: String
-) extends Trades[F] {
-  override def writeTrades(trades: List[Trade]): F[Unit] = ???
+) extends TransfersProcessor {
 
-  override def getTradesFromBlock(transfers: List[AssetTransfer], ctfAddress: String, wtf: String): List[Trade] = {
+  override def extractTradesFrom(transfers: List[AssetTransfer]): List[Trade] = {
+    val transfersGroupedByBlockNum: List[List[AssetTransfer]] =
+      transfers
+        .groupBy(_.blockNum)
+        .values
+        .toList
+
+    transfersGroupedByBlockNum.flatMap(extractTradesForSingleBlock)
+  }
+
+  private def extractTradesForSingleBlock(transfers: List[AssetTransfer]): List[Trade] = {
     def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer]): List[Trade] =
       if (erc1155s.groupBy(_.tokenId).size == 1) {
         if (usdcs.count(_.to == ctfAddress) == 1) {
@@ -59,8 +62,8 @@ class TradesImpl[F[_]: Async](
         } // makers = buyers
       } // trading
       else {
-        val usdcsf    = usdcs.filter(t => t.from != wtf && t.to != wtf)
-        val erc1155sf = erc1155s.filter(t => t.from != wtf && t.to != wtf)
+        val usdcsf    = usdcs.filter(t => t.from != burnMintAddress && t.to != burnMintAddress)
+        val erc1155sf = erc1155s.filter(t => t.from != burnMintAddress && t.to != burnMintAddress)
         val trades = erc1155sf.map(erc1155 =>
           Trade(
             erc1155.from,
@@ -87,16 +90,12 @@ class TradesImpl[F[_]: Async](
         }
       matchTransfers(usdcTfs, erc1155Tfs)
     }
-    trades
-  }
 
-  override def exec(transfers: List[AssetTransfer]): F[Unit] = {
-    val trades = getTradesFromBlock(transfers, ctfAddress, burnMintAddress)
-    Async[F].delay(println(trades))
+    trades
   }
 }
 
-object TradesImpl {
-  def of[F[_]: Async]( /*transactor: Transactor[F], */ ctf: String, burnMint: String): F[TradesImpl[F]] =
-    Slf4jLogger.create[F].map(logger => new TradesImpl[F]( /*transactor, */ logger, ctf, burnMint))
+object TransfersProcessorImpl {
+  def apply(ctf: String, burnMint: String): TransfersProcessor =
+    new TransfersProcessorImpl(ctf, burnMint)
 }
