@@ -8,7 +8,8 @@ import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
-import org.github.insider.alchemy.services.Trades
+import org.github.insider.alchemy.processors.TransfersProcessor
+import org.github.insider.alchemy.repository.TradesRepository
 
 class TradeWorker[F[_]: Async](
   fromBlock: Ref[F, Int],
@@ -17,16 +18,18 @@ class TradeWorker[F[_]: Async](
   client: TransfersClient[F],
   ctfAddress: String,
   step: Int,
-  tradesService: Trades[F]
+  transfersProcessor: TransfersProcessor,
+  tradesRepository: TradesRepository[F],
 )(workerNumber: Int) {
-  def run: F[Unit] = for {
-    fromBlock <- fromBlock.getAndUpdate(_ + step)
-    _ <-
-      if (fromBlock > toBlock) logger.info(s"[worker-$workerNumber] Finished, no more trades.")
-      else runRange(fromBlock, Math.min(step - 1, toBlock - fromBlock))
-  } yield ()
+  def run: F[Unit] =
+    fromBlock.getAndUpdate(_ + step).flatMap { fromBlock =>
+      if (fromBlock > toBlock)
+        logger.info(s"[worker-$workerNumber] Finished, no more trades.")
+      else
+        runRange(fromBlock, Math.min(step - 1, toBlock - fromBlock))
+    }
 
-  def runRange(fromBlock: Int, nBlocks: Int): F[Unit] = {
+  private def runRange(fromBlock: Int, nBlocks: Int): F[Unit] = {
 
     def rec(
       transfers: List[AssetTransfer],
@@ -43,22 +46,23 @@ class TradeWorker[F[_]: Async](
         withMetadata = None,
         page         = page
       )
-      transfersAll = transfers ++ resp.transfers.flatMap(AssetTransfer.fromTransfer)
-      res <- resp.pageKey match {
-        case None        => transfersAll.pure[F]
-        case a @ Some(_) => rec(transfersAll, a, toAddress, fromAddress)
+      updatedTransfers = transfers ++ resp.transfers.flatMap(AssetTransfer.fromTransfer)
+      result <- resp.pageKey match {
+        case None        => updatedTransfers.pure[F]
+        case a @ Some(_) => rec(updatedTransfers, a, toAddress, fromAddress)
       }
-    } yield res
+    } yield result
 
     for {
       transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
       transfersFrom <- rec(Nil, None, Some(ctfAddress), None)
-      transfers = (transfersTo ++ transfersFrom)
-        .groupBy(_.blockNum)
-        .values
-        .toList
-      _ <- transfers.traverse(tradesService.exec)
-      _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
+      allTransfers   = transfersTo ++ transfersFrom
+      trades         = transfersProcessor.extractTradesFrom(allTransfers)
+      _ <- logger.info(
+        s"[worker-$workerNumber] Transfers fetched - ${allTransfers.size}, trades extracted - ${trades.size}"
+      )
+      tradesInserted <- tradesRepository.insert(trades)
+      _              <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
     } yield ()
   }
 }
@@ -70,14 +74,24 @@ object TradeWorker {
     transfersClient: TransfersClient[F],
     ctfAddress: String,
     step: Int,
-    tradesService: Trades[F]
+    transfersProcessor: TransfersProcessor,
+    tradesRepository: TradesRepository[F],
   )(
     workerNumber: Int
   ): F[TradeWorker[F]] =
     Slf4jLogger
       .create[F]
       .map(logger =>
-        new TradeWorker[F](fromBlock, toBlock, logger, transfersClient, ctfAddress, step, tradesService)(
+        new TradeWorker[F](
+          fromBlock,
+          toBlock,
+          logger,
+          transfersClient,
+          ctfAddress,
+          step,
+          transfersProcessor,
+          tradesRepository
+        )(
           workerNumber
         )
       )
