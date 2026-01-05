@@ -8,14 +8,15 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import cats.syntax.all._
 import doobie.syntax.all._
 
-class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F])
-    extends TradesRepository[F] {
+class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends TradesRepository[F] {
 
-  override def insert(trades: List[Trade]): F[Long] =
-    Update[Trade]("""
-        INSERT INTO trades (maker_address, token, amount, total_price, created_at, hash, side)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      """).updateMany(trades).transact(transactor).map(_.toLong)
+  override def insert(trades: List[Trade]): F[Int] =
+    Update[Trade](
+      """
+        |INSERT INTO trades (maker_address, token, amount, total_price, created_at, polygon_tx_hash, side)
+        |VALUES (?, ?, ?, ?, ?, ?, ?)
+        |""".stripMargin
+    ).updateMany(trades).transact(transactor)
 }
 
 object TradesRepositoryImpl {

@@ -5,13 +5,17 @@ import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTra
 import org.github.insider.polymarket.domain.Side.{Buy, Sell}
 import org.github.insider.polymarket.domain.Trade
 
-private class TransfersProcessorImpl(
-  ctfAddress: String,
-  burnMintAddress: String,
-  collateral: String
-) extends TransfersProcessor {
+private class TransfersProcessorImpl extends TransfersProcessor {
 
-  private val nullAddress = "0x0000000000000000000000000000000000000000"
+  private val CTFAddress = "0xc5d563a36ae78145c45a50134d48a1215220f80a"
+
+  private val FilterOutAddresses =
+    Set(
+      "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", // burn-mint address
+      "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", // collateral address
+      "0x0000000000000000000000000000000000000000", // null address
+    )
+
   private val scale = 1000000
 
   override def extractTradesFrom(transfers: List[AssetTransfer]): List[Trade] = {
@@ -26,29 +30,31 @@ private class TransfersProcessorImpl(
 
   private def extractTradesForSingleBlock(transfers: List[AssetTransfer]): List[Trade] = {
     def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer]): List[Trade] = {
-      val filterdUsds = usdcs.filter(x =>
-        x.from != burnMintAddress && x.from != collateral && x.from != nullAddress &&
-          x.to != burnMintAddress && x.to != collateral && x.to != nullAddress
-      )
-      val filterdErcs = erc1155s.filter(x =>
-        x.from != burnMintAddress && x.from != collateral && x.from != nullAddress &&
-          x.to != burnMintAddress && x.to != collateral && x.to != nullAddress
-      )
-
-      val trades = filterdUsds.flatMap{ usdc =>
-        val erc = filterdErcs.find(x => x.from == usdc.to && x.to == usdc.from)
-        val makerAddress = if(usdc.to == ctfAddress) usdc.from else usdc.to
-        val side = if(usdc.from == ctfAddress) Sell else Buy
-        erc.map(erc => Trade(
-          makerAddress,
-          erc.tokenId,
-          BigDecimal(BigInt(erc.value.drop(2), 16)),
-          usdc.value,
-          erc.blockTimestamp,
-          erc.hash,
-          side
-        ))
+      val filteredUsds =
+        usdcs.filter { usdc =>
+          !(FilterOutAddresses.contains(usdc.from) || FilterOutAddresses.contains(usdc.to))
+        }
+      val filteredErcs = erc1155s.filter { erc1155 =>
+        !(FilterOutAddresses.contains(erc1155.from) || FilterOutAddresses.contains(erc1155.to))
       }
+
+      val trades = filteredUsds.flatMap { usdc =>
+        val erc          = filteredErcs.find(x => x.from == usdc.to && x.to == usdc.from)
+        val makerAddress = if (usdc.to == CTFAddress) usdc.from else usdc.to
+        val side         = if (usdc.from == CTFAddress) Sell else Buy
+        erc.map(erc =>
+          Trade(
+            makerAddress,
+            erc.tokenId,
+            BigDecimal(BigInt(erc.value.drop(2), 16)),
+            usdc.value,
+            erc.blockTimestamp,
+            erc.hash,
+            side
+          )
+        )
+      }
+
       trades
     }
 
@@ -67,6 +73,5 @@ private class TransfersProcessorImpl(
 }
 
 object TransfersProcessorImpl {
-  def apply(ctf: String, burnMint: String, collateral: String): TransfersProcessor =
-    new TransfersProcessorImpl(ctf, burnMint, collateral)
+  def apply(): TransfersProcessor = new TransfersProcessorImpl()
 }

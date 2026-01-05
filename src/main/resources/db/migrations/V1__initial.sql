@@ -26,15 +26,14 @@ CREATE TABLE "events"
 
 CREATE TABLE "trades"
 (
-    "maker_address" varchar,
-    "token" varchar NOT NULL,
-    "side" varchar CHECK (side IN ('BUY', 'SELL')),
-    "market_id"        varchar,
-    "amount"           integer,
-    "total_price"            decimal,
-    "created_at"       timestamp,
-
-    "hash" varchar
+    "maker_address"   varchar,
+    "token"           varchar NOT NULL,
+    "side"            varchar CHECK (side IN ('BUY', 'SELL')),
+    "market_id"       varchar,
+    "amount"          integer,
+    "total_price"     decimal,
+    "created_at"      timestamp,
+    "polygon_tx_hash" varchar
 );
 
 CREATE TABLE "resolutions"

@@ -18,18 +18,14 @@ import pureconfig.generic.auto._
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
     val resource = for {
-      config           <- ConfigSource.default.loadF[IO, MainConfig].toResource
-      transactor       <- Database.postgresResource[IO](config.dbConfig)
-      tradesRepository <- TradesRepositoryImpl.of[IO](transactor).toResource
-      client           <- EmberClientBuilder.default[IO].build
-      eventClient      <- EventsClientImpl.of[IO](client).toResource
-      tagsClient       <- TagsClientImpl.of[IO](client).toResource
-      transfersClient  <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
-      transfersProcessor = TransfersProcessorImpl(
-        config.alchemy.ctfAddress,
-        config.alchemy.burnMintAddress,
-        config.alchemy.collateralAddress
-      )
+      config            <- ConfigSource.default.loadF[IO, MainConfig].toResource
+      transactor        <- Database.postgresResource[IO](config.dbConfig)
+      tradesRepository  <- TradesRepositoryImpl.of[IO](transactor).toResource
+      client            <- EmberClientBuilder.default[IO].build
+      eventClient       <- EventsClientImpl.of[IO](client).toResource
+      tagsClient        <- TagsClientImpl.of[IO](client).toResource
+      transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      transfersProcessor = TransfersProcessorImpl()
       tradeWorkerGroup <- TradeWorkerGroup
         .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 25)(1)
         .toResource
@@ -43,7 +39,7 @@ object Main extends IOApp.Simple {
 
           keywords = List("stock", "google", "apple", "revenue", "report")
 
-          tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
+          // tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
           /*relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)*/
 
           // For testing purposes, 10 events are fetched for each tag.
