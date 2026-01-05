@@ -8,7 +8,7 @@ import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.configs.syntax.sourceOps
-import org.github.insider.polymarket.persistance.Database
+import org.github.insider.polymarket.persistance.{Database, DbMigrations}
 import org.github.insider.polymarket.workers.TagsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -27,8 +27,9 @@ object Main extends IOApp.Simple {
       transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
       transfersProcessor = TransfersProcessorImpl()
       tradeWorkerGroup <- TradeWorkerGroup
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 25)(1)
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(100)
         .toResource
+      _ <- DbMigrations.migrate[IO](config.dbConfig).toResource
     } yield (tagsClient, tradeWorkerGroup)
 
     resource use {
@@ -60,7 +61,7 @@ object Main extends IOApp.Simple {
             page         = None
           )*/
 
-          _ <- tradeWorkerGroup.run(80701191, 80701192)
+          _ <- tradeWorkerGroup.run(80801203, 80901203)
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

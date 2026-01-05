@@ -30,9 +30,9 @@ CREATE TABLE "trades"
     "token"           varchar NOT NULL,
     "side"            varchar CHECK (side IN ('BUY', 'SELL')),
     "market_id"       varchar,
-    "amount"          integer,
+    "amount"          decimal,
     "total_price"     decimal,
-    "created_at"      timestamp,
+    "created_at"      varchar,
     "polygon_tx_hash" varchar
 );
 
@@ -41,7 +41,7 @@ CREATE TABLE "resolutions"
     "id"         uuid PRIMARY KEY,
     "market_id"  varchar UNIQUE,
     "true_token" varchar,
-    "created_at" timestamp
+    "created_at" varchar
 );
 
 ALTER TABLE "markets"
@@ -65,5 +65,4 @@ ALTER TABLE "resolutions"
 CREATE INDEX idx_trades_market_id ON trades(market_id);
 CREATE INDEX idx_trades_token ON trades(token);
 CREATE INDEX idx_trades_created_at ON trades(created_at);
-CREATE UNIQUE INDEX idx_trades_hash ON trades(hash);
 

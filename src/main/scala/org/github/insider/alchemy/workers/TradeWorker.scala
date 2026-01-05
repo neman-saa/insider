@@ -26,7 +26,7 @@ class TradeWorker[F[_]: Async](
       if (fromBlock > toBlock)
         logger.info(s"[worker-$workerNumber] Finished, no more trades.")
       else
-        runRange(fromBlock, Math.min(step - 1, toBlock - fromBlock))
+        runRange(fromBlock, Math.min(step - 1, toBlock - fromBlock)) >> run
     }
 
   private def runRange(fromBlock: Int, nBlocks: Int): F[Unit] = {
@@ -61,7 +61,7 @@ class TradeWorker[F[_]: Async](
       _ <- logger.info(
         s"[worker-$workerNumber] Transfers fetched - ${allTransfers.size}, trades extracted - ${trades.size}"
       )
-      tradesInserted <- tradesRepository.insert(trades)
+      _ <- tradesRepository.insert(trades)
       _              <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
     } yield ()
   }
