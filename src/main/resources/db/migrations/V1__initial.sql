@@ -26,14 +26,14 @@ CREATE TABLE "events"
 
 CREATE TABLE "trades"
 (
-    "id"               uuid PRIMARY KEY,
-    "side" varchar CHECK (side IN ('BUY', 'SELL')),
     "maker_address" varchar,
+    "token" varchar NOT NULL,
+    "side" varchar CHECK (side IN ('BUY', 'SELL')),
     "market_id"        varchar,
     "amount"           integer,
     "total_price"            decimal,
     "created_at"       timestamp,
-    "token" varchar NOT NULL,
+
     "hash" varchar
 );
 
