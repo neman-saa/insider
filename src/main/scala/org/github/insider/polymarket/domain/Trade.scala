@@ -1,11 +1,11 @@
 package org.github.insider.polymarket.domain
 
-case class Trade(
+final case class Trade(
   makerAddress: String,
-  assetId: String,
-  size: BigDecimal,
+  tokenId: String,
+  side: Side,
+  amount: BigDecimal,
   totalPrice: BigDecimal,
+  txHash: String,
   timestamp: Option[String],
-  hash: String,
-  side: Side
 )

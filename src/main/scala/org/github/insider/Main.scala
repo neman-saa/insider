@@ -27,7 +27,7 @@ object Main extends IOApp.Simple {
       transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
       transfersProcessor = TransfersProcessorImpl()
       tradeWorkerGroup <- TradeWorkerGroup
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(100)
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(25)
         .toResource
       _ <- DbMigrations.migrate[IO](config.dbConfig).toResource
     } yield (tagsClient, tradeWorkerGroup)
@@ -38,30 +38,18 @@ object Main extends IOApp.Simple {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
 
-          keywords = List("stock", "google", "apple", "revenue", "report")
+//          keywords = List("stock", "google", "apple", "revenue", "report")
 
-          // tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
-          /*relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)*/
+//          tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
+//          relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
 
-          // For testing purposes, 10 events are fetched for each tag.
-          /*eventsPerTag <- relevantTags
-            .parTraverse { tag =>
-              eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
-            }
-            .map(_.toMap)*/
+//          eventsPerTag <- relevantTags
+//            .parTraverse { tag =>
+//              eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
+//            }
+//            .map(_.toMap)
 
-          // For testing purposes, all transfers from 0x40B1581 block are fetched with particular params
-          /*transfers <- transfersClient.getAssetTransfers(
-            fromBlock    = Some("0x40B1581"),
-            toBlock      = Some("0x40B1581"),
-            fromAddress  = Some("0xc5d563a36ae78145c45a50134d48a1215220f80a"),
-            toAddress    = None,
-            category     = Set(ERC20, ERC1155),
-            withMetadata = None,
-            page         = None
-          )*/
-
-          _ <- tradeWorkerGroup.run(80801203, 80901203)
+          _ <- tradeWorkerGroup.run(80801203, 80801603)
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

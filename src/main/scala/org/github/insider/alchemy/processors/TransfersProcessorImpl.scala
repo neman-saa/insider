@@ -42,15 +42,16 @@ private class TransfersProcessorImpl extends TransfersProcessor {
         val erc          = filteredErcs.find(x => x.from == usdc.to && x.to == usdc.from)
         val makerAddress = if (usdc.to == CTFAddress) usdc.from else usdc.to
         val side         = if (usdc.from == CTFAddress) Sell else Buy
+
         erc.map(erc =>
           Trade(
-            makerAddress,
-            erc.tokenId,
-            BigDecimal(BigInt(erc.value.drop(2), 16)),
-            usdc.value,
-            erc.blockTimestamp,
-            erc.hash,
-            side
+            makerAddress = makerAddress,
+            tokenId      = BigDecimal(BigInt(erc.tokenId.drop(2), 16)).toString,
+            side         = side,
+            amount       = BigDecimal(BigInt(erc.value.drop(2), 16)),
+            totalPrice   = usdc.value,
+            txHash       = erc.hash,
+            timestamp    = erc.blockTimestamp,
           )
         )
       }

@@ -13,7 +13,7 @@ class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logge
   override def insert(trades: List[Trade]): F[Int] =
     Update[Trade](
       """
-        |INSERT INTO trades (maker_address, token, amount, total_price, created_at, polygon_tx_hash, side)
+        |INSERT INTO trades (maker_address, token_id, side, amount, total_price, polygon_tx_hash, created_at)
         |VALUES (?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin
     ).updateMany(trades).transact(transactor)
