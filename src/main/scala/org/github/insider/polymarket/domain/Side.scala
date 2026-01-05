@@ -13,4 +13,5 @@ object Side {
       case "BUY"  => Side.Buy
       case "SELL" => Side.Sell
     }
+
 }
