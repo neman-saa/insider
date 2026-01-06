@@ -15,11 +15,11 @@ object Side {
       case "SELL" => Side.Sell
     }
 
-  implicit val sideMeta: Meta[Side] = Meta[String].timap[Side]{
-    case "BUY" => Buy
+  implicit val sideMeta: Meta[Side] = Meta[String].timap[Side] {
+    case "BUY"  => Buy
     case "SELL" => Sell
-  }{
-    case Buy => "BUY"
+  } {
+    case Buy  => "BUY"
     case Sell => "SELL"
   }
 }

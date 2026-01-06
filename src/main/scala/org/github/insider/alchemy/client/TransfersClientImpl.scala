@@ -67,7 +67,6 @@ object TransfersClientImpl {
   def of[F[_]: Async](client: Client[F], apiKey: String): F[TransfersClient[F]] = {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
 
-    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](clientWithLogging, logger, apiKey))
-
+    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](client, logger, apiKey))
   }
 }

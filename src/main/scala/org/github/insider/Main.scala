@@ -27,7 +27,7 @@ object Main extends IOApp.Simple {
       transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
       transfersProcessor = TransfersProcessorImpl()
       tradeWorkerGroup <- TradeWorkerGroup
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(25)
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(20)
         .toResource
       _ <- DbMigrations.migrate[IO](config.dbConfig).toResource
     } yield (tagsClient, tradeWorkerGroup)
@@ -49,7 +49,12 @@ object Main extends IOApp.Simple {
 //            }
 //            .map(_.toMap)
 
-          _ <- tradeWorkerGroup.run(80801203, 80801603)
+          /**
+            * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
+            * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
+            */
+          _ <- tradeWorkerGroup.run(66157355, 66158355)
+
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

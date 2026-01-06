@@ -17,16 +17,19 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
   ctfAddress: String,
   step: Int
 )(nWorkers: Int) {
-  def run(fromBlock: Int, toBlock: Int): F[Unit] = for {
-    _         <- logger.info("Application started parsing trades")
-    _         <- logger.info(s"From: 0x${fromBlock.toHexString}, to: 0x${toBlock.toHexString}")
-    fromBlock <- Ref.of[F, Int](fromBlock)
-    workers <- (1 to nWorkers)
-      .toList
-      .traverse(i => TradeWorker(fromBlock, toBlock, client, ctfAddress, step, transfersProcessor, tradesRepository)(i))
-    _ <- workers.parTraverse_(_.run)
-    _ <- logger.info("Application finished parsing trades")
-  } yield ()
+  def run(fromBlock: Int, toBlock: Int): F[Unit] =
+    for {
+      _         <- logger.info(s"Starting trades extraction in range: $fromBlock to $toBlock")
+      fromBlock <- Ref.of[F, Int](fromBlock)
+      workers <-
+        (1 to nWorkers)
+          .toList
+          .traverse(i =>
+            TradeWorker(fromBlock, toBlock, client, ctfAddress, step, transfersProcessor, tradesRepository)(i)
+          )
+      _ <- workers.parTraverse_(_.run)
+      _ <- logger.info("Application finished trades extraction")
+    } yield ()
 }
 
 object TradeWorkerGroup {

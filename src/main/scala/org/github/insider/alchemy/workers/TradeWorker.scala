@@ -54,6 +54,7 @@ class TradeWorker[F[_]: Async](
     } yield result
 
     for {
+      _             <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - ${fromBlock + nBlocks}")
       transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
       transfersFrom <- rec(Nil, None, Some(ctfAddress), None)
       allTransfers   = transfersTo ++ transfersFrom
@@ -62,7 +63,7 @@ class TradeWorker[F[_]: Async](
         s"[worker-$workerNumber] Transfers fetched - ${allTransfers.size}, trades extracted - ${trades.size}"
       )
       _ <- tradesRepository.insert(trades)
-      _              <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
+      _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")
     } yield ()
   }
 }
