@@ -1,12 +1,14 @@
 package org.github.insider
 
 import cats.effect.{IO, IOApp}
-import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClientImpl
-import org.github.insider.alchemy.domain.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.alchemy.processors.TransfersProcessorImpl
+import org.github.insider.alchemy.repository.TradesRepositoryImpl
+import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.configs.syntax.sourceOps
+import org.github.insider.polymarket.persistance.{Database, DbMigrations}
 import org.github.insider.polymarket.workers.TagsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -16,40 +18,42 @@ import pureconfig.generic.auto._
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
     val resource = for {
-      config          <- ConfigSource.default.loadF[IO, MainConfig].toResource
-      client          <- EmberClientBuilder.default[IO].build
-      eventClient     <- EventsClientImpl.of[IO](client).toResource
-      tagsClient      <- TagsClientImpl.of[IO](client).toResource
-      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
-    } yield (eventClient, tagsClient, transfersClient)
+      config            <- ConfigSource.default.loadF[IO, MainConfig].toResource
+      transactor        <- Database.postgresResource[IO](config.dbConfig)
+      tradesRepository  <- TradesRepositoryImpl.of[IO](transactor).toResource
+      client            <- EmberClientBuilder.default[IO].build
+      eventClient       <- EventsClientImpl.of[IO](client).toResource
+      tagsClient        <- TagsClientImpl.of[IO](client).toResource
+      transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      transfersProcessor = TransfersProcessorImpl()
+      tradeWorkerGroup <- TradeWorkerGroup
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(20)
+        .toResource
+      _ <- DbMigrations.migrate[IO](config.dbConfig).toResource
+    } yield (tagsClient, tradeWorkerGroup)
 
     resource use {
-      case (eventClient, tagsClient, transfersClient) =>
+      case (tagsClient, tradeWorkerGroup) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
 
-          keywords = List("stock", "google", "apple", "revenue", "report")
+//          keywords = List("stock", "google", "apple", "revenue", "report")
 
-          tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
-          relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
+//          tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
+//          relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
 
-          // For testing purposes, 10 events are fetched for each tag.
-          eventsPerTag <- relevantTags
-            .parTraverse { tag =>
-              eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
-            }
-            .map(_.toMap)
+//          eventsPerTag <- relevantTags
+//            .parTraverse { tag =>
+//              eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
+//            }
+//            .map(_.toMap)
 
-          // For testing purposes, all transfers from 0x40B1581 block are fetched with particular params
-          transfers <- transfersClient.getAssetTransfers(
-            fromBlock    = Some("0x40B1581"),
-            toBlock      = Some("0x40B1581"),
-            fromAddress  = Some("0xc5d563a36ae78145c45a50134d48a1215220f80a"),
-            toAddress    = None,
-            category     = Set(ERC20, ERC1155),
-            withMetadata = None,
-          )
+          /**
+            * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
+            * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
+            */
+          _ <- tradeWorkerGroup.run(66157355, 66158355)
 
           _ <- logger.info("Shutting down application...")
         } yield ()

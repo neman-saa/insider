@@ -2,8 +2,8 @@ package org.github.insider.alchemy.client
 
 import cats.effect.Async
 import cats.syntax.all._
-import org.github.insider.alchemy.domain.ApiResponse.GetAssetTransfersApiResponseBody
-import org.github.insider.alchemy.domain.{ApiRequest, ApiResponse, TokenCategory, Transfer}
+import org.github.insider.alchemy.domain.dto.ApiResponse.GetAssetTransfersApiResponseBody
+import org.github.insider.alchemy.domain.dto.{ApiRequest, ApiResponse, TokenCategory, Transfer}
 import org.http4s.{Method, Request, Status, Uri}
 import org.http4s.client.Client
 import org.http4s.client._
@@ -24,7 +24,8 @@ private class TransfersClientImpl[F[_]: Async](
     toAddress: Option[String],
     category: Set[TokenCategory],
     withMetadata: Option[Boolean],
-  ): F[List[Transfer]] = {
+    page: Option[String]
+  ): F[GetAssetTransfersApiResponseBody] = {
     val uri: Uri =
       PolygonMainnetHost
         .addSegment("v2")
@@ -37,6 +38,7 @@ private class TransfersClientImpl[F[_]: Async](
       toAddress    = toAddress,
       category     = category,
       withMetadata = withMetadata,
+      page         = page
     )
 
     val request: Request[F] = Request[F](
@@ -48,9 +50,11 @@ private class TransfersClientImpl[F[_]: Async](
       case Status.Successful(response) =>
         response.attemptAs[ApiResponse[GetAssetTransfersApiResponseBody]].value.flatMap {
           case Left(_) =>
-            logger.error(s"Unable to parse transfers response. Request params: ${uri.params}").as(List.empty)
+            logger
+              .error(s"Unable to parse transfers response. Request params: ${uri.params}")
+              .as(GetAssetTransfersApiResponseBody(Nil, None))
           case Right(transfersApiResponse) =>
-            transfersApiResponse.result.transfers.pure[F]
+            transfersApiResponse.result.pure[F]
         }
       case other =>
         logger.error(s"Unsuccessful response received while fetching transfers: $other") >>
@@ -61,8 +65,8 @@ private class TransfersClientImpl[F[_]: Async](
 
 object TransfersClientImpl {
   def of[F[_]: Async](client: Client[F], apiKey: String): F[TransfersClient[F]] = {
-    val clientWithLogging = middleware.Logger[F](logBody = true, logHeaders = true)(client)
+    val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
 
-    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](clientWithLogging, logger, apiKey))
+    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](client, logger, apiKey))
   }
 }

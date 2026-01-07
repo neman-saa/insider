@@ -1,4 +1,4 @@
-package org.github.insider.alchemy.domain
+package org.github.insider.alchemy.domain.dto
 
 import io.circe.{Decoder, Encoder}
 

@@ -1,8 +1,9 @@
-package org.github.insider.alchemy.domain
+package org.github.insider.alchemy.domain.dto
 
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
-import org.github.insider.alchemy.domain.Transfer.{ERC1155TransferMetadata, TransferMetadata}
+import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
+import org.github.insider.alchemy.domain.dto.Transfer.{ERC1155TransferMetadata, TransferMetadata}
 
 final case class Transfer(
   category: Option[TokenCategory],

@@ -1,4 +1,4 @@
-package org.github.insider.alchemy.domain
+package org.github.insider.alchemy.domain.dto
 
 import io.circe.Encoder
 import io.circe.generic.semiauto.deriveEncoder
@@ -20,6 +20,7 @@ object ApiRequest {
     toAddress: Option[String],
     category: Set[TokenCategory],
     withMetadata: Option[Boolean],
+    pageKey: Option[String]
   )
 
   object GetAssetTransfersPayload {
@@ -34,6 +35,7 @@ object ApiRequest {
     toAddress: Option[String],
     category: Set[TokenCategory],
     withMetadata: Option[Boolean],
+    page: Option[String]
   ): ApiRequest[GetAssetTransfersPayload] = {
     val payload = GetAssetTransfersPayload(
       fromBlock    = fromBlock,
@@ -42,6 +44,7 @@ object ApiRequest {
       toAddress    = toAddress,
       category     = category,
       withMetadata = withMetadata,
+      pageKey      = page
     )
 
     getAssetTransfersRequest(payload)

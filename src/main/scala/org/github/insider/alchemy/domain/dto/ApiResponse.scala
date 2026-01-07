@@ -1,4 +1,4 @@
-package org.github.insider.alchemy.domain
+package org.github.insider.alchemy.domain.dto
 
 import io.circe.Decoder
 import io.circe.generic.semiauto.deriveDecoder
@@ -12,6 +12,7 @@ object ApiResponse {
 
   final case class GetAssetTransfersApiResponseBody(
     transfers: List[Transfer],
+    pageKey: Option[String]
   )
 
   object GetAssetTransfersApiResponseBody {
