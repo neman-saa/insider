@@ -1,4 +1,4 @@
-package org.github.insider.polymarket.persistance
+package org.github.insider.persistance
 
 import cats.effect.Sync
 import cats.implicits._

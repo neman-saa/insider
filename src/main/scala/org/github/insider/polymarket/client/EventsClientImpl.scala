@@ -10,27 +10,33 @@ import org.http4s.client._
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.LocalDateTime
+import java.time.Instant
 
 private class EventsClientImpl[F[_]: Async](
   client: Client[F],
   logger: Logger[F],
 ) extends EventsClient[F] {
 
-  override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] = {
-    val uri: Uri =
-      GammaApiHost
-        .addSegment("events")
-        .withQueryParam("tag_id", tag.id)
-        .withQueryParam("limit", limit)
-        .withQueryParam("offset", offset)
-        .withQueryParam("order", "creationDate")
+  override def getEventsByMaxEndDate(maxEndDate: Instant, limit: Int, offset: Int): F[List[Event]] = getEvents(
+    baseUri(limit, offset).withQueryParam("end_date_max", maxEndDate.toString)
+  )
 
+  override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] =
+    getEvents(baseUri(limit, offset).withQueryParam("tag_id", tag.id))
+
+  private def baseUri(limit: Int, offset: Int): Uri =
+    GammaApiHost
+      .addSegment("events")
+      .withQueryParam("limit", limit)
+      .withQueryParam("offset", offset)
+      .withQueryParam("order", "endDate")
+
+  private def getEvents(uri: Uri): F[List[Event]] = {
     client.get[List[Event]](uri) {
       case Status.Successful(response) =>
         response.attemptAs[List[Event]].value.flatMap {
-          case Left(_) =>
-            logger.error(s"Unable to parse getEventsByTag response. Request params: ${uri.params}").as(List.empty)
+          case Left(e) =>
+            logger.error(s"Unable to parse getEvents response. Request params: ${uri.params}. Error: ${e.message}").as(List.empty)
           case Right(events) =>
             events.pure[F]
         }
@@ -39,6 +45,7 @@ private class EventsClientImpl[F[_]: Async](
           Async[F].raiseError(new Throwable("todo"))
     }
   }
+
 }
 
 object EventsClientImpl {

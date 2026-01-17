@@ -1,4 +1,4 @@
-package org.github.insider.polymarket.persistance
+package org.github.insider.persistance
 
 import org.github.insider.polymarket.configs.DbConfig
 import cats.effect.Async

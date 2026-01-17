@@ -3,4 +3,5 @@
 .bsp
 .idea
 /docker/data
+/docker/clickhouse_data
 target

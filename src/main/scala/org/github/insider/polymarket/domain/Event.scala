@@ -2,18 +2,17 @@ package org.github.insider.polymarket.domain
 
 import io.circe.Decoder
 import io.circe.generic.semiauto.deriveDecoder
-import org.github.insider.polymarket.codecs.CustomCodecs._
 
-import java.time.LocalDateTime
+import java.time.Instant
 
 final case class Event(
   id: String,
   title: String,
-  startDate: LocalDateTime,
-  endDate: LocalDateTime,
-  volume: Volume,
-  markets: List[Market],
-  createdAt: LocalDateTime,
+  startDate: Option[Instant],
+  endDate: Option[Instant],
+  volume: Option[Volume],
+  markets: Option[List[Market]],
+  tags: Option[List[Tag]]
 )
 
 object Event {

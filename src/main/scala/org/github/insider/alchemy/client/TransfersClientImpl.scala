@@ -11,6 +11,8 @@ import org.http4s.circe.CirceEntityCodec.{circeEntityDecoder, circeEntityEncoder
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import scala.concurrent.duration.DurationInt
+
 private class TransfersClientImpl[F[_]: Async](
   client: Client[F],
   logger: Logger[F],
@@ -58,7 +60,15 @@ private class TransfersClientImpl[F[_]: Async](
         }
       case other =>
         logger.error(s"Unsuccessful response received while fetching transfers: $other") >>
-          Async[F].raiseError(new Throwable("todo"))
+          Async[F].sleep(3.seconds) >> getAssetTransfers(
+            fromBlock,
+            toBlock,
+            fromAddress,
+            toAddress,
+            category,
+            withMetadata,
+            page
+          )
     }
   }
 }

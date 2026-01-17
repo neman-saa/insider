@@ -5,15 +5,18 @@ import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.TradesRepositoryImpl
 import org.github.insider.alchemy.workers.TradeWorkerGroup
+import org.github.insider.persistance.{Database, DbMigrations}
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.configs.syntax.sourceOps
-import org.github.insider.polymarket.persistance.{Database, DbMigrations}
-import org.github.insider.polymarket.workers.TagsExtractorWorkerGroup
+import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
+import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
+
+import java.time.Instant
 
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
@@ -25,35 +28,29 @@ object Main extends IOApp.Simple {
       eventClient       <- EventsClientImpl.of[IO](client).toResource
       tagsClient        <- TagsClientImpl.of[IO](client).toResource
       transfersClient   <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      marketsImpl       <- MarketsImpl.of[IO](transactor).toResource
+      eventsImpl        <- EventsImpl.of[IO](transactor).toResource
       transfersProcessor = TransfersProcessorImpl()
       tradeWorkerGroup <- TradeWorkerGroup
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(20)
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(10)
         .toResource
       _ <- DbMigrations.migrate[IO](config.dbConfig).toResource
-    } yield (tagsClient, tradeWorkerGroup)
+      eventWorkerGroup <- EventsExtractorWorkerGroup
+        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
+        .toResource
+    } yield (eventWorkerGroup, tradeWorkerGroup)
 
     resource use {
-      case (tagsClient, tradeWorkerGroup) =>
+      case (eventWorkerGroup, tradeWorkerGroup) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
-
-//          keywords = List("stock", "google", "apple", "revenue", "report")
-
-//          tagsExtractor <- TagsExtractorWorkerGroup.of[IO](tagsClient)(workersNumber = 3)
-//          relevantTags  <- tagsExtractor.getRelevantTags(keywords, limit = 100, maxDepth = 5000)
-
-//          eventsPerTag <- relevantTags
-//            .parTraverse { tag =>
-//              eventClient.getEventsByTag(tag, 10, 0).map(events => tag -> events)
-//            }
-//            .map(_.toMap)
-
+          //_ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-01-01T00:00:00Z"), limit = 100, maxDepth = 150000)
           /**
             * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
             * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
             */
-          _ <- tradeWorkerGroup.run(66157355, 66158355)
+          _ <- tradeWorkerGroup.run(77_481_300, 81_500_000) // result in 78_763_244 trades
 
           _ <- logger.info("Shutting down application...")
         } yield ()
