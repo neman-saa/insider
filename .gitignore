@@ -5,3 +5,4 @@
 /docker/data
 /docker/clickhouse_data
 target
+/logs

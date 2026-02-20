@@ -11,7 +11,7 @@
 
     <profiles>
         <default>
-            <max_memory_usage>10000000000</max_memory_usage>
+            <max_memory_usage>24000000000</max_memory_usage>
             <max_execution_time>300</max_execution_time>
         </default>
     </profiles>

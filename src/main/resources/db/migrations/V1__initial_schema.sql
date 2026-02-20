@@ -1,47 +1,51 @@
-CREATE TABLE "events"
+CREATE TABLE IF NOT EXISTS events
 (
-    "id"         varchar,
-    "volume"     decimal,
-    "title"      varchar,
-    "start_date" timestamptz,
-    "end_date"   timestamptz,
-    "tags"       text[]
-);
+    id Nullable(String),
+    volume Nullable(Decimal(38, 9)),
+    title Nullable(String),
+    start_date Nullable(DateTime64(6)),
+    end_date Nullable(DateTime64(6)),
+    tags Array(Nullable(String))
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
 
-CREATE INDEX idx_events_id ON events (id);
-
-CREATE TABLE "markets"
+CREATE TABLE TABLE IF NOT EXISTS markets
 (
-    "id"           varchar,
-    "condition_id" varchar,
-    "question"     varchar,
-    "start_date"   timestamptz,
-    "end_date"     timestamptz,
-    "event_id"     varchar,
-    "volume"       decimal
-);
+    id Nullable(String),
+    condition_id Nullable(String),
+    question Nullable(String),
+    start_date Nullable(DateTime64(6)),
+    end_date Nullable(DateTime64(6)),
+    event_id Nullable(String),
+    volume Nullable(Decimal(38, 9))
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
 
-CREATE INDEX idx_markets_id ON markets (id);
-
-CREATE TABLE "tokens"
+CREATE TABLE IF NOT EXISTS tokens
 (
-    "id"         varchar,
-    "market_id"  varchar,
-    "outcome"    varchar,
-    "last_price" decimal
-);
+    id Nullable(String),
+    market_id Nullable(String),
+    outcome Nullable(String),
+    last_price Nullable(Decimal(38, 9))
+)
+ENGINE = MergeTree()
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
 
-CREATE INDEX idx_tokens_id ON tokens (id);
-
-CREATE TABLE "trades"
+CREATE TABLE IF NOT EXISTS trades
 (
-    "maker_address"   varchar,
-    "token_id"        varchar,
-    "side"            varchar,
-    "amount"          decimal,
-    "total_price"     decimal,
-    "polygon_tx_hash" varchar,
-    "created_at"      varchar
-);
-
-CREATE INDEX idx_trades_maker_address_token_id ON trades (maker_address, token_id);
+    maker_address Nullable(String),
+    token_id Nullable(String),
+    side Nullable(String),
+    amount Nullable(Decimal(38, 9)),
+    total_price Nullable(Decimal(38, 9)),
+    polygon_tx_hash Nullable(String),
+    created_at Nullable(String)
+)
+ENGINE = MergeTree()
+ORDER BY (maker_address, token_id)
+SETTINGS allow_nullable_key = 1;

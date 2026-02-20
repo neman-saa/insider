@@ -13,6 +13,7 @@ lazy val root = (project in file("."))
       logger,
       apacheLog4j,
       migrations,
+      clickhouse,
       Testing.log      % Test,
       Testing.test     % Test,
       Testing.catsTest % Test,

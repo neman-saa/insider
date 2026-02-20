@@ -50,5 +50,5 @@ object Dependencies {
   val logger      = "org.typelevel"           %% "log4cats-slf4j"    % log4catsVersion
   val apacheLog4j = "org.apache.logging.log4j" % "log4j-slf4j2-impl" % "2.24.0"
   val migrations  = "org.flywaydb"             % "flyway-core"       % flywayVersion
-
+  val clickhouse  = "com.clickhouse"           % "clickhouse-jdbc"   % "0.8.2"
 }

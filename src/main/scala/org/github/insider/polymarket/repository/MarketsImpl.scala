@@ -20,13 +20,14 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
       Update[(String, String, String, Option[OffsetDateTime], Option[OffsetDateTime], String, Option[Volume])](
         """
         |INSERT INTO markets(
-        |id,
-        |condition_id,
-        |question,
-        |start_date,
-        |end_date,
-        |event_id,
-        |volume)
+        | id,
+        | condition_id,
+        | question,
+        | start_date,
+        | end_date,
+        | event_id,
+        | volume
+        |)
         |VALUES (?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin
       ).updateMany(markets.map { t =>

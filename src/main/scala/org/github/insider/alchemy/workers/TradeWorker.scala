@@ -18,7 +18,7 @@ class TradeWorker[F[_]: Async](
   client: TransfersClient[F],
   ctfAddress: String,
   step: Int,
-  transfersProcessor: TransfersProcessor,
+  transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
 )(workerNumber: Int) {
   def run: F[Unit] =
@@ -58,7 +58,7 @@ class TradeWorker[F[_]: Async](
       transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
       transfersFrom <- rec(Nil, None, Some(ctfAddress), None)
       allTransfers   = transfersTo ++ transfersFrom
-      trades         = transfersProcessor.extractTradesFrom(allTransfers)
+      trades        <- transfersProcessor.extractTradesFrom(allTransfers)
       _ <- logger.info(
         s"[worker-$workerNumber] Transfers fetched - ${allTransfers.size}, trades extracted - ${trades.size}"
       )
@@ -75,7 +75,7 @@ object TradeWorker {
     transfersClient: TransfersClient[F],
     ctfAddress: String,
     step: Int,
-    transfersProcessor: TransfersProcessor,
+    transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
   )(
     workerNumber: Int

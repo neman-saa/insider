@@ -17,7 +17,7 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
     Update[(String, Option[Volume], String, Option[OffsetDateTime], Option[OffsetDateTime], String)](
       """
       |INSERT INTO events (id, volume, title, start_date, end_date, tags)
-      |VALUES (?, ?, ?, ?, ?, string_to_array(?, ','))
+      |VALUES (?, ?, ?, ?, ?, splitByChar(',', ?))
       |""".stripMargin
     ).updateMany(
       events.map(event =>

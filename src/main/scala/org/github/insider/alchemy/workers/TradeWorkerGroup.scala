@@ -12,7 +12,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 class TradeWorkerGroup[F[_]: Async: Parallel](
   logger: Logger[F],
   client: TransfersClient[F],
-  transfersProcessor: TransfersProcessor,
+  transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
   ctfAddress: String,
   step: Int
@@ -35,7 +35,7 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
 object TradeWorkerGroup {
   def of[F[_]: Async: Parallel](
     client: TransfersClient[F],
-    transfersProcessor: TransfersProcessor,
+    transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
     ctfAddress: String,
     step: Int

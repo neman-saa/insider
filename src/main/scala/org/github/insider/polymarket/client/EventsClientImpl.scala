@@ -36,7 +36,9 @@ private class EventsClientImpl[F[_]: Async](
       case Status.Successful(response) =>
         response.attemptAs[List[Event]].value.flatMap {
           case Left(e) =>
-            logger.error(s"Unable to parse getEvents response. Request params: ${uri.params}. Error: ${e.message}").as(List.empty)
+            logger
+              .error(s"Unable to parse getEvents response. Request params: ${uri.params}. Error: ${e.message}")
+              .as(List.empty)
           case Right(events) =>
             events.pure[F]
         }
