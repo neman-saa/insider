@@ -20,18 +20,30 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
       "0x0000000000000000000000000000000000000000", // null address
     )
 
-  override def extractTradesFrom(transfers: List[AssetTransfer]): F[List[Trade]] = {
-    val transfersGroupedByBlockNum: List[List[AssetTransfer]] =
-      transfers
-        .groupBy(_.blockNum)
-        .values
-        .toList
+  /**
+    * @param transfersTo
+    *   ordered by Alchemy API transfers to CTF exchange
+    * @param transfersFrom
+    *   ordered by Alchemy API transfers from CTF exchange
+    */
+  override def extractTradesFrom(
+    transfersTo: List[AssetTransfer],
+    transfersFrom: List[AssetTransfer],
+  ): F[List[Trade]] = {
+    val transfers = transfersTo ++ transfersFrom
 
-    transfersGroupedByBlockNum.flatTraverse(extractTradesForSingleBlock)
+    val transfersGroupedByBlockNum = transfers.groupBy(_.blockNum)
+
+    val orderedTransfersGroupedByBlockNum =
+      transfersGroupedByBlockNum.toList.sortBy { case (blockNum, _) => blockNum }
+
+    orderedTransfersGroupedByBlockNum.flatTraverse {
+      case (blockNum, transfers) => extractTradesForSingleBlock(transfers, blockNum)
+    }
   }
 
-  private def extractTradesForSingleBlock(transfers: List[AssetTransfer]): F[List[Trade]] = {
-    def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer]): F[List[Trade]] = {
+  private def extractTradesForSingleBlock(transfers: List[AssetTransfer], blockNum: Long): F[List[Trade]] = {
+    def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer], txIndex: Int): F[List[Trade]] = {
       val filteredUsdcs =
         usdcs.filter { usdc =>
           !(FilterOutAddresses.contains(usdc.from) || FilterOutAddresses.contains(usdc.to))
@@ -47,13 +59,15 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
 
         usdc -> erc.map(erc =>
           Trade(
-            makerAddress = makerAddress,
-            tokenId      = BigDecimal(BigInt(erc.tokenId.drop(2), 16)).toString,
-            side         = side,
-            amount       = BigDecimal(BigInt(erc.value.drop(2), 16)),
-            totalPrice   = usdc.value,
-            txHash       = erc.hash,
-            timestamp    = erc.blockTimestamp,
+            makerAddress   = makerAddress,
+            tokenId        = BigDecimal(BigInt(erc.tokenId.stripPrefix("0x"), 16)).toString,
+            side           = side,
+            amount         = BigDecimal(BigInt(erc.value.stripPrefix("0x"), 16)),
+            totalPrice     = usdc.value,
+            blockNum       = blockNum,
+            txHash         = erc.hash,
+            txIndex        = txIndex,
+            blockTimestamp = erc.blockTimestamp,
           )
         )
       }
@@ -70,20 +84,29 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
       maybeTrades.map(_.flatten)
     }
 
-    val groupedByHash = transfers.groupBy(_.hash).values.toList
+    /* Map which represents an ordering index of particular tx hash */
+    val txsOrdering: Map[String, Int] = transfers.map(_.hash).distinct.zipWithIndex.toMap
 
-    groupedByHash.flatTraverse { transfers =>
-      val (usdcTfs: List[USDCTransfer], erc1155Tfs: List[ERC1155Transfer]) =
-        transfers.partition {
-          case _: ERC1155Transfer => false
-          case _: USDCTransfer    => true
-        }
+    val transfersGroupedByTxHash = transfers.groupBy(_.hash).toList
 
-      val unknownTransfers: List[UnknownTransfer] =
-        transfers.collect { case transfer: UnknownTransfer => transfer }
+    val orderedTransfersGroupedByTxIndex =
+      transfersGroupedByTxHash.map { case (txHash, transfers) => txsOrdering(txHash) -> transfers }.sortBy {
+        case (txIndex, _) => txIndex
+      }
 
-      unknownTransfers.traverse(unknownTransfer => logger.info(s"Unknown transfer detected - $unknownTransfer")) *>
-        matchTransfers(usdcTfs, erc1155Tfs)
+    orderedTransfersGroupedByTxIndex.flatTraverse {
+      case (txIndex, transfers) =>
+        val (usdcTfs: List[USDCTransfer], erc1155Tfs: List[ERC1155Transfer]) =
+          transfers.partition {
+            case _: ERC1155Transfer => false
+            case _: USDCTransfer    => true
+          }
+
+        val unknownTransfers: List[UnknownTransfer] =
+          transfers.collect { case transfer: UnknownTransfer => transfer }
+
+        unknownTransfers.traverse(unknownTransfer => logger.info(s"Unknown transfer detected - $unknownTransfer")) *>
+          matchTransfers(usdcTfs, erc1155Tfs, txIndex)
     }
   }
 }

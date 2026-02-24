@@ -3,8 +3,10 @@ package org.github.insider.alchemy.domain
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.domain.dto.{TokenCategory, Transfer}
 
+import java.time.LocalDateTime
+
 sealed trait AssetTransfer {
-  def blockNum: String
+  def blockNum: Long
 
   def from: String // Make Address value class
 
@@ -12,7 +14,7 @@ sealed trait AssetTransfer {
 
   def hash: String
 
-  def blockTimestamp: Option[String]
+  def blockTimestamp: Option[LocalDateTime]
 }
 
 object AssetTransfer {
@@ -22,13 +24,13 @@ object AssetTransfer {
     transfer.category match {
       case Some(ERC20) =>
         for {
-          blockNum <- transfer.blockNum
-          from     <- transfer.from
-          to       <- transfer.to
-          hash     <- transfer.hash
-          value    <- transfer.value
+          blockNumHex <- transfer.blockNum
+          from        <- transfer.from
+          to          <- transfer.to
+          hash        <- transfer.hash
+          value       <- transfer.value
         } yield USDCTransfer(
-          blockNum       = blockNum,
+          blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
           from           = from,
           to             = to,
           hash           = hash,
@@ -38,14 +40,14 @@ object AssetTransfer {
 
       case Some(ERC1155) =>
         for {
-          blockNum <- transfer.blockNum
-          from     <- transfer.from
-          to       <- transfer.to
-          hash     <- transfer.hash
-          value    <- transfer.erc1155Metadata.headOption.flatMap(_.value)
-          tokenId  <- transfer.erc1155Metadata.headOption.flatMap(_.tokenId)
+          blockNumHex <- transfer.blockNum
+          from        <- transfer.from
+          to          <- transfer.to
+          hash        <- transfer.hash
+          value       <- transfer.erc1155Metadata.headOption.flatMap(_.value)
+          tokenId     <- transfer.erc1155Metadata.headOption.flatMap(_.tokenId)
         } yield ERC1155Transfer(
-          blockNum       = blockNum,
+          blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
           from           = from,
           to             = to,
           hash           = hash,
@@ -55,12 +57,12 @@ object AssetTransfer {
         )
       case _ =>
         for {
-          blockNum <- transfer.blockNum
-          from     <- transfer.from
-          to       <- transfer.to
-          hash     <- transfer.hash
+          blockNumHex <- transfer.blockNum
+          from        <- transfer.from
+          to          <- transfer.to
+          hash        <- transfer.hash
         } yield UnknownTransfer(
-          blockNum       = blockNum,
+          blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
           from           = from,
           to             = to,
           hash           = hash,
@@ -70,32 +72,32 @@ object AssetTransfer {
     }
 
   final case class ERC1155Transfer(
-    blockNum: String,
+    blockNum: Long,
     from: String,
     to: String,
     hash: String,
-    blockTimestamp: Option[String],
+    blockTimestamp: Option[LocalDateTime],
     // ERC1155 transfer metadata
     tokenId: String,
     value: String,
   ) extends AssetTransfer
 
   final case class USDCTransfer(
-    blockNum: String,
+    blockNum: Long,
     from: String,
     to: String,
     hash: String,
-    blockTimestamp: Option[String],
+    blockTimestamp: Option[LocalDateTime],
     // ERC20 transfer metadata
     value: BigDecimal,
   ) extends AssetTransfer
 
   final case class UnknownTransfer(
-    blockNum: String,
+    blockNum: Long,
     from: String,
     to: String,
     hash: String,
-    blockTimestamp: Option[String],
+    blockTimestamp: Option[LocalDateTime],
     // Unknown asset category
     category: Option[TokenCategory],
   ) extends AssetTransfer
