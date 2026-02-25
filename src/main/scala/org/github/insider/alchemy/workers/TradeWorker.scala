@@ -10,9 +10,6 @@ import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.TradesRepository
-import org.github.insider.polymarket.domain.{Side, Trade}
-
-import java.time.LocalDateTime
 
 class TradeWorker[F[_]: Async](
   fromBlock: Ref[F, Int],
@@ -60,9 +57,10 @@ class TradeWorker[F[_]: Async](
       _             <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - ${fromBlock + nBlocks}")
       transfersTo   <- rec(Nil, None, Some(ctfAddress), None)
       transfersFrom <- rec(Nil, None, None, Some(ctfAddress))
-      trades        <- transfersProcessor.extractTradesFrom(transfersTo, transfersFrom)
+      transfers      = transfersTo ++ transfersFrom
+      trades        <- transfersProcessor.extractTradesFrom(transfers)
       _ <- logger.info(
-        s"[worker-$workerNumber] Transfers fetched - ${transfersTo.size + transfersFrom.size}, trades extracted - ${trades.size}"
+        s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
       )
       _ <- tradesRepository.insert(trades)
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")

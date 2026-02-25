@@ -27,11 +27,8 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
     *   ordered by Alchemy API transfers from CTF exchange
     */
   override def extractTradesFrom(
-    transfersTo: List[AssetTransfer],
-    transfersFrom: List[AssetTransfer],
+    transfers: List[AssetTransfer],
   ): F[List[Trade]] = {
-    val transfers = transfersTo ++ transfersFrom
-
     val transfersGroupedByBlockNum = transfers.groupBy(_.blockNum)
 
     val orderedTransfersGroupedByBlockNum =

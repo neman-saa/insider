@@ -27,6 +27,18 @@
             <AppenderRef ref="TransfersProcessorImpl"/>
         </Logger>
 
+        <Logger name="com.clickhouse.jdbc"
+                level="error"
+                additivity="false">
+            <AppenderRef ref="ConsoleAppender"/>
+        </Logger>
+
+        <Logger name="com.clickhouse.client.api.Client"
+                level="error"
+                additivity="false">
+            <AppenderRef ref="ConsoleAppender"/>
+        </Logger>
+
         <Root level="INFO">
             <AppenderRef ref="ConsoleAppender"/>
         </Root>
