@@ -1,6 +1,7 @@
 package org.github.insider
 
 import cats.effect.{IO, IOApp}
+import org.github.insider.alchemy.TradesFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.TradesRepositoryImpl
@@ -28,17 +29,15 @@ object Main extends IOApp.Simple {
       marketsImpl        <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl         <- EventsImpl.of[IO](transactor).toResource
       transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
-      tradeWorkerGroup <- TradeWorkerGroup
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 100)(10)
-        .toResource
+      tradesFlow <- TradesFlow.of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy).toResource
       // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
       eventWorkerGroup <- EventsExtractorWorkerGroup
         .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
         .toResource
-    } yield (eventWorkerGroup, tradeWorkerGroup)
+    } yield (eventWorkerGroup, tradesFlow)
 
     resource use {
-      case (eventWorkerGroup, tradeWorkerGroup) =>
+      case (eventWorkerGroup, tradesFlow) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -47,7 +46,7 @@ object Main extends IOApp.Simple {
             * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
             * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
             */
-          _ <- tradeWorkerGroup.run(77_481_300, 81_500_000) // result in 78_763_244 trades
+          _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
 
           _ <- logger.info("Shutting down application...")
         } yield ()

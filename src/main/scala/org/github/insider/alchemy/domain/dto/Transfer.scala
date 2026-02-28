@@ -1,9 +1,10 @@
 package org.github.insider.alchemy.domain.dto
 
-import io.circe.Codec
+import io.circe.{Codec, Decoder}
 import io.circe.generic.semiauto.deriveCodec
-import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.domain.dto.Transfer.{ERC1155TransferMetadata, TransferMetadata}
+
+import java.time.LocalDateTime
 
 final case class Transfer(
   category: Option[TokenCategory],
@@ -33,10 +34,13 @@ object Transfer {
   }
 
   final case class TransferMetadata(
-    blockTimestamp: Option[String],
+    blockTimestamp: Option[LocalDateTime],
   )
 
   object TransferMetadata {
     implicit val codec: Codec[TransferMetadata] = deriveCodec
+
+    implicit val localDateTimeDecoder: Decoder[LocalDateTime] =
+      Decoder[String].map(_.init).map(LocalDateTime.parse)
   }
 }

@@ -43,7 +43,7 @@ class TradeWorker[F[_]: Async](
         fromAddress  = fromAddress,
         toAddress    = toAddress,
         category     = Set(ERC1155, ERC20),
-        withMetadata = None,
+        withMetadata = Some(true),
         page         = page
       )
       updatedTransfers = transfers ++ resp.transfers.flatMap(AssetTransfer.fromTransfer)
@@ -55,12 +55,12 @@ class TradeWorker[F[_]: Async](
 
     for {
       _             <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - ${fromBlock + nBlocks}")
-      transfersTo   <- rec(Nil, None, None, Some(ctfAddress))
-      transfersFrom <- rec(Nil, None, Some(ctfAddress), None)
-      allTransfers   = transfersTo ++ transfersFrom
-      trades        <- transfersProcessor.extractTradesFrom(allTransfers)
+      transfersTo   <- rec(Nil, None, Some(ctfAddress), None)
+      transfersFrom <- rec(Nil, None, None, Some(ctfAddress))
+      transfers      = transfersTo ++ transfersFrom
+      trades        <- transfersProcessor.extractTradesFrom(transfers)
       _ <- logger.info(
-        s"[worker-$workerNumber] Transfers fetched - ${allTransfers.size}, trades extracted - ${trades.size}"
+        s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
       )
       _ <- tradesRepository.insert(trades)
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - ${fromBlock + nBlocks}")

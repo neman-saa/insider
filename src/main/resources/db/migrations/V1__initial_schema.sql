@@ -49,3 +49,19 @@ CREATE TABLE IF NOT EXISTS trades
 ENGINE = MergeTree()
 ORDER BY (maker_address, token_id)
 SETTINGS allow_nullable_key = 1;
+
+CREATE TABLE IF NOT EXISTS trades_v2
+(
+    maker_address Nullable(String),
+    token_id Nullable(String),
+    side Nullable(String),
+    amount Nullable(Decimal(38, 9)),
+    total_price Nullable(Decimal(38, 9)),
+    block_num Nullable(Int64),
+    tx_hash Nullable(String),
+    tx_index Nullable(Int32),
+    block_timestamp Nullable(DateTime64(6))
+)
+ENGINE = MergeTree()
+ORDER BY (maker_address, token_id) -- review
+SETTINGS allow_nullable_key = 1;
