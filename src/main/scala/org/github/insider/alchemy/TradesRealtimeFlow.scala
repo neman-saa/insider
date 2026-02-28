@@ -1,6 +1,7 @@
 package org.github.insider.alchemy
 
-import cats.effect.kernel.Sync
+import cats.effect.Ref
+import cats.effect.kernel.Async
 import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
@@ -11,28 +12,42 @@ import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-class TradesFlow[F[_]: Sync](
+import scala.concurrent.duration.DurationInt
+
+class TradesRealtimeFlow[F[_]: Async](
   client: TransfersClient[F],
   transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
   alchemyConfig: AlchemyConfig,
 )(logger: Logger[F]) {
 
-  def run(fromBlock: Int, toBlock: Int, batchSize: Int): F[Unit] =
-    (fromBlock to toBlock).grouped(batchSize).toList.traverse_ { range =>
-      val from = range.start
-      val to   = range.end
-
+  def runForever: F[Unit] = {
+    def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[Unit] =
       for {
-        transfers <- getAssetsTransfersInRange(from, to)
-        trades    <- transfersProcessor.extractTradesFrom(transfers)
-        _         <- logger.info(s"Trades extracted - ${trades.size}")
-        _         <- tradesRepository.insert(trades)
-        _         <- logger.info(s"Finished range $from - $to}")
-      } yield ()
-    }
+        latestProcessedBlock <- latestProcessedBlockR.get
+        toBlock               = latestProcessedBlock + 1000
+        transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
+        trades               <- transfersProcessor.extractTradesFrom(transfers)
+        _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
-  private def getAssetsTransfersInRange(fromBlock: Int, toBlock: Int): F[List[AssetTransfer]] = {
+        _ <- tradesRepository.insert(trades)
+
+        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
+        _              <- latestProcessedBlockR.set(nextLatestBlock)
+
+        _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
+        _ <- Async[F].sleep(3.seconds)
+      } yield ()
+
+    for {
+      latestProcessedBlockR <- Ref.empty[F, Long]
+      latestProcessedBlock  <- tradesRepository.getLatestBlock
+      _                     <- latestProcessedBlockR.set(latestProcessedBlock)
+      _                     <- fs2.Stream.repeatEval(realtimeAction(latestProcessedBlockR)).compile.drain
+    } yield ()
+  }
+
+  private def getAssetsTransfersInRange(fromBlock: Long, toBlock: Long): F[List[AssetTransfer]] = {
     def rec(
       transfers: List[AssetTransfer],
       page: Option[String],
@@ -67,14 +82,16 @@ class TradesFlow[F[_]: Sync](
   }
 }
 
-object TradesFlow {
-  def of[F[_]: Sync](
+object TradesRealtimeFlow {
+  def of[F[_]: Async](
     transfersClient: TransfersClient[F],
     transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
     alchemyConfig: AlchemyConfig,
-  ): F[TradesFlow[F]] =
+  ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
-      .map(logger => new TradesFlow[F](transfersClient, transfersProcessor, tradesRepository, alchemyConfig)(logger))
+      .map(logger =>
+        new TradesRealtimeFlow[F](transfersClient, transfersProcessor, tradesRepository, alchemyConfig)(logger)
+      )
 }

@@ -1,7 +1,7 @@
 package org.github.insider
 
 import cats.effect.{IO, IOApp}
-import org.github.insider.alchemy.TradesFlow
+import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.TradesRepositoryImpl
@@ -29,15 +29,20 @@ object Main extends IOApp.Simple {
       marketsImpl        <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl         <- EventsImpl.of[IO](transactor).toResource
       transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
-      tradesFlow <- TradesFlow.of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy).toResource
+      tradesRealtimeFlow <- TradesRealtimeFlow
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy)
+        .toResource
+      tradesWorkerGroup <- TradeWorkerGroup
+        .of[IO](transfersClient, transfersProcessor, tradesRepository, config.alchemy.ctfAddress, 1000)(10)
+        .toResource
       // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
       eventWorkerGroup <- EventsExtractorWorkerGroup
         .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
         .toResource
-    } yield (eventWorkerGroup, tradesFlow)
+    } yield (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow)
 
     resource use {
-      case (eventWorkerGroup, tradesFlow) =>
+      case (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -46,7 +51,10 @@ object Main extends IOApp.Simple {
             * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
             * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
             */
-          _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
+          // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
+
+          _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
+          _ <- tradesRealtimeFlow.runForever
 
           _ <- logger.info("Shutting down application...")
         } yield ()

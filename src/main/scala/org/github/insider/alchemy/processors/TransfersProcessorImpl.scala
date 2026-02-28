@@ -20,12 +20,6 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
       "0x0000000000000000000000000000000000000000", // null address
     )
 
-  /**
-    * @param transfersTo
-    *   ordered by Alchemy API transfers to CTF exchange
-    * @param transfersFrom
-    *   ordered by Alchemy API transfers from CTF exchange
-    */
   override def extractTradesFrom(
     transfers: List[AssetTransfer],
   ): F[List[Trade]] = {

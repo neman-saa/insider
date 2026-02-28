@@ -4,4 +4,6 @@ import org.github.insider.polymarket.domain.Trade
 
 trait TradesRepository[F[_]] {
   def insert(trades: List[Trade]): F[Int]
+
+  def getLatestBlock: F[Long]
 }

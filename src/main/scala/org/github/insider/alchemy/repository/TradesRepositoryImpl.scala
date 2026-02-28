@@ -17,7 +17,18 @@ class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logge
         |INSERT INTO trades_v2 (maker_address, token_id, side, amount, total_price, block_num, tx_hash, tx_index, block_timestamp)
         |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin
-    ).updateMany(trades).transact(transactor)
+    )
+      .updateMany(trades)
+      .transact(transactor)
+
+  override def getLatestBlock: F[Long] =
+    fr"""
+      |SELECT ifNull(max(block_num), 51500000) FROM trades_v2
+      |"""
+      .stripMargin
+      .query[Long]
+      .unique
+      .transact(transactor)
 }
 
 object TradesRepositoryImpl {
