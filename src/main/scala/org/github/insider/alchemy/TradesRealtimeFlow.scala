@@ -1,5 +1,6 @@
 package org.github.insider.alchemy
 
+import cats.data.NonEmptyList
 import cats.effect.Ref
 import cats.effect.kernel.Async
 import cats.syntax.all._
@@ -7,7 +8,7 @@ import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
-import org.github.insider.alchemy.repository.TradesRepository
+import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -18,6 +19,7 @@ class TradesRealtimeFlow[F[_]: Async](
   client: TransfersClient[F],
   transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
+  aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
 )(logger: Logger[F]) {
 
@@ -30,7 +32,9 @@ class TradesRealtimeFlow[F[_]: Async](
         trades               <- transfersProcessor.extractTradesFrom(transfers)
         _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
-        _ <- tradesRepository.insert(trades)
+        nel = NonEmptyList.fromList(trades)
+        _ <- nel.fold(0.pure[F])(tradesRepository.insert)
+        _ <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
@@ -76,7 +80,7 @@ class TradesRealtimeFlow[F[_]: Async](
       _             <- logger.info(s"Starting range $fromBlock - $toBlock")
       transfersTo   <- rec(Nil, None, Some(alchemyConfig.ctfAddress), None)
       transfersFrom <- rec(Nil, None, None, Some(alchemyConfig.ctfAddress))
-      transfers      = transfersTo ++ transfersFrom
+      transfers      = transfersTo.reverse ++ transfersFrom.reverse
       _             <- logger.info(s"Transfers fetched - ${transfers.size}")
     } yield transfers
   }
@@ -87,11 +91,18 @@ object TradesRealtimeFlow {
     transfersClient: TransfersClient[F],
     transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
+    aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
       .map(logger =>
-        new TradesRealtimeFlow[F](transfersClient, transfersProcessor, tradesRepository, alchemyConfig)(logger)
+        new TradesRealtimeFlow[F](
+          transfersClient,
+          transfersProcessor,
+          tradesRepository,
+          aggregatedRepository,
+          alchemyConfig
+        )(logger)
       )
 }

@@ -1,21 +1,6 @@
 version: "3.9"
 services:
 
-  postgres:
-    image: postgres
-    container_name: insider_postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=insider
-    ports:
-      - '5432:5432'
-    volumes:
-      - ./data/postgres:/var/lib/postgresql
-    networks:
-      - migration_net
-
   clickhouse:
     image: clickhouse/clickhouse-server:24.1
     container_name: clickhouse_insider
@@ -23,7 +8,7 @@ services:
       - "8123:8123"
       - "9000:9000"
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
+      - docker_clickhouse_data_new:/var/lib/clickhouse
       - ./ch_config/config.xml:/etc/clickhouse-server/config.d/docker.xml
       - ./ch_config/users.xml:/etc/clickhouse-server/users.d/docker.xml
     ulimits:
@@ -44,4 +29,5 @@ networks:
     driver: bridge
 
 volumes:
-  clickhouse_data:
+  docker_clickhouse_data_new:
+    external: true

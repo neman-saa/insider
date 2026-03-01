@@ -1,11 +1,8 @@
 package org.github.insider.alchemy.repository
 
 import cats.data.NonEmptyList
-import org.github.insider.alchemy.domain.User
 import org.github.insider.polymarket.domain.Trade
 
-trait TradesRepository[F[_]] {
+trait AggregatedTradesRepository[F[_]] {
   def insert(trades: NonEmptyList[Trade]): F[Int]
-  def leaderboard: F[List[User]]
-  def getLatestBlock: F[Long]
 }

@@ -1,5 +1,6 @@
 package org.github.insider.alchemy.workers
 
+import cats.data.NonEmptyList
 import cats.effect.Ref
 import cats.effect.kernel.Async
 import org.typelevel.log4cats.Logger
@@ -9,7 +10,7 @@ import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
-import org.github.insider.alchemy.repository.TradesRepository
+import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 
 class TradeWorker[F[_]: Async](
   latestProcessedBlockR: Ref[F, Int],
@@ -20,6 +21,7 @@ class TradeWorker[F[_]: Async](
   step: Int,
   transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
+  aggregatedRepository: AggregatedTradesRepository[F]
 )(workerNumber: Int) {
   def run: F[Unit] =
     latestProcessedBlockR.getAndUpdate(_ + step).flatMap { latestProcessedBlock =>
@@ -36,7 +38,11 @@ class TradeWorker[F[_]: Async](
       _ <- logger.info(
         s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
       )
-      _ <- tradesRepository.insert(trades)
+
+      nel = NonEmptyList.fromList(trades)
+      _ <- nel.fold(0.pure[F])(tradesRepository.insert)
+      _ <- nel.fold(0.pure[F])(aggregatedRepository.insert)
+
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - $toBlock")
     } yield ()
   }
@@ -85,6 +91,7 @@ object TradeWorker {
     step: Int,
     transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
+    aggregatedRepository: AggregatedTradesRepository[F]
   )(
     workerNumber: Int
   ): F[TradeWorker[F]] =
@@ -99,7 +106,8 @@ object TradeWorker {
           ctfAddress,
           step,
           transfersProcessor,
-          tradesRepository
+          tradesRepository,
+          aggregatedRepository
         )(
           workerNumber
         )
