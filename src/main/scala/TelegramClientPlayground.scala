@@ -1,12 +1,16 @@
 import cats.effect.{IO, IOApp}
 import fs2.concurrent.Topic
 
+import scala.concurrent.duration.DurationInt
+
+
 object TelegramClientPlayground extends IOApp.Simple {
 
   import canoe.api._
   import canoe.syntax._
   import cats.effect.Async
   import fs2.Stream
+  import cats.effect.implicits._
 
   def app[F[_]: Async]: F[Unit] =
     Stream
@@ -15,12 +19,12 @@ object TelegramClientPlayground extends IOApp.Simple {
       .compile
       .drain
 
-  def greetings[F[_]: TelegramClient]: Scenario[F, Unit] =
+  def greetings[F[_]: TelegramClient: Async]: Scenario[F, Unit] =
     for {
       chat <- Scenario.expect(command("hi").chat)
-      _    <- Scenario.eval(chat.send("Hello. What's your name?"))
-      name <- Scenario.expect(text)
-      _    <- Scenario.eval(chat.send(s"Nice to meet you, $name"))
+      fiber <- Scenario.eval(Stream.awakeEvery[F](5.seconds).evalMap(_ => chat.send(")")).compile.drain.start)
+      _ <- Scenario.expect(command("buy"))
+      _    <- Scenario.eval(fiber.cancel)
       _    <- Scenario.done
     } yield ()
 

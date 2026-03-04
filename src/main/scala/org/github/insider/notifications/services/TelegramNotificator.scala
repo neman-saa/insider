@@ -25,6 +25,7 @@ class TelegramNotificator[F[_]: Async: TelegramClient](topic: Topic[F, Trade]) {
       |SIDE = ${trade.side}
       |timestamp = ${trade.blockTimestamp.getOrElse("???")}
       |block number = ${trade.blockNum}
+      |token id = ${trade.tokenId}
       |""".stripMargin
 
   private def notifications: Scenario[F, Unit] =
