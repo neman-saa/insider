@@ -14,6 +14,9 @@ import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import java.time.Instant
+import scala.concurrent.duration.DurationInt
+
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
     val resource = for {
@@ -21,13 +24,13 @@ object Main extends IOApp.Simple {
       transactor                 <- Database.makeTransactor[IO](config.dbConfig)
       tradesRepository           <- TradesRepositoryImpl.of[IO](transactor).toResource
       aggregatedTradesRepository <- AggregatedTradesRepositoryImpl.of[IO](transactor).toResource
-      client                     <- EmberClientBuilder.default[IO].build
-      eventClient                <- EventsClientImpl.of[IO](client).toResource
-      tagsClient                 <- TagsClientImpl.of[IO](client).toResource
-      transfersClient            <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
-      marketsImpl                <- MarketsImpl.of[IO](transactor).toResource
-      eventsImpl                 <- EventsImpl.of[IO](transactor).toResource
-      transfersProcessor         <- TransfersProcessorImpl.of[IO]().toResource
+      client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
+      eventClient     <- EventsClientImpl.of[IO](client).toResource
+      tagsClient      <- TagsClientImpl.of[IO](client).toResource
+      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      marketsImpl     <- MarketsImpl.of[IO](transactor).toResource
+      eventsImpl      <- EventsImpl.of[IO](transactor).toResource
+      transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
       tradesRealtimeFlow <- TradesRealtimeFlow
         .of[IO](transfersClient, transfersProcessor, tradesRepository, aggregatedTradesRepository, config.alchemy)
         .toResource
@@ -38,8 +41,8 @@ object Main extends IOApp.Simple {
           tradesRepository,
           aggregatedTradesRepository,
           config.alchemy.ctfAddress,
-          1000
-        )(2)
+          100
+        )(5)
         .toResource
       // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
       eventWorkerGroup <- EventsExtractorWorkerGroup
@@ -52,15 +55,12 @@ object Main extends IOApp.Simple {
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
-          // _ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-01-01T00:00:00Z"), limit = 100, maxDepth = 150000)
-          /**
-            * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
-            * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
-            */
-          // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
 
-          _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
-          _ <- tradesRealtimeFlow.runForever
+          // _ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-03-10T00:00:00Z"), limit = 1000, maxDepth = 500_000)
+
+          // _ <- tradesWorkerGroup.run(83_300_500, 83_724_000)
+
+          // _ <- tradesRealtimeFlow.runForever
 
           _ <- logger.info("Shutting down application...")
         } yield ()

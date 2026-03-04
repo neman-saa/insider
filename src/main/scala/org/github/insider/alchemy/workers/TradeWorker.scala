@@ -25,7 +25,7 @@ class TradeWorker[F[_]: Async](
 )(workerNumber: Int) {
   def run: F[Unit] =
     latestProcessedBlockR.getAndUpdate(_ + step).flatMap { latestProcessedBlock =>
-      if (latestProcessedBlock > finalBlock)
+      if (latestProcessedBlock >= finalBlock)
         logger.info(s"[worker-$workerNumber] Finished, no more trades.")
       else
         runRange(latestProcessedBlock + 1, latestProcessedBlock + step) >> run
