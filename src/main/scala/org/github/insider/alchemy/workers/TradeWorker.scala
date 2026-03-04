@@ -38,6 +38,7 @@ class TradeWorker[F[_]: Async](
       _ <- logger.info(
         s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
       )
+
       nel = NonEmptyList.fromList(trades)
       _  <- nel.fold(0.pure[F])(tradesRepository.insert)
       _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
