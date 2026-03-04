@@ -20,6 +20,9 @@ object MainConfig {
     burnMintAddress: String
   )
 
+  final class TelegramConfig(
+                              token: String
+                            )
   implicit val dbConfigReader: ConfigReader[DbConfig] = {
     implicit val PropertiesConfigReader: ConfigReader[Properties] =
       ConfigReader.fromCursor { c =>
