@@ -33,8 +33,8 @@ class TradesRealtimeFlow[F[_]: Async](
         _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
         nel = NonEmptyList.fromList(trades)
-        _ <- nel.fold(0.pure[F])(tradesRepository.insert)
-        _ <- nel.fold(0.pure[F])(aggregatedRepository.insert)
+        _  <- nel.fold(0.pure[F])(tradesRepository.insert)
+        _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
