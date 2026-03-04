@@ -1,18 +1,26 @@
 package org.github.insider
 
-import cats.effect.{IO, IOApp}
+import canoe.api._
+import canoe.syntax._
+import cats.effect.{IO, IOApp, Ref}
+import fs2.concurrent.Topic
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
+import org.github.insider.alchemy.domain.User
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
+import org.github.insider.notifications.services.TelegramNotificator
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
+import org.github.insider.polymarket.domain.Trade
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+
+import scala.concurrent.duration.DurationInt
 
 object Main extends IOApp.Simple {
   override def run: IO[Unit] = {
@@ -28,8 +36,33 @@ object Main extends IOApp.Simple {
       marketsImpl                <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl                 <- EventsImpl.of[IO](transactor).toResource
       transfersProcessor         <- TransfersProcessorImpl.of[IO]().toResource
+      leaderboard                <- Ref.empty[IO, List[User]].toResource
+      _ <-
+        fs2
+          .Stream
+          .awakeEvery[IO](6.hours)
+          .evalMap(_ =>
+            for {
+              newLeaderboard <- tradesRepository.leaderboard
+              _              <- leaderboard.set(newLeaderboard)
+            } yield ()
+          )
+          .compile
+          .drain
+          .start
+          .toResource
+      importantTrades <- Topic[IO, Trade].toResource
+      _               <- TelegramNotificator.of[IO](importantTrades)(config.telegram.token).toResource
       tradesRealtimeFlow <- TradesRealtimeFlow
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, aggregatedTradesRepository, config.alchemy)
+        .of[IO](
+          transfersClient,
+          transfersProcessor,
+          tradesRepository,
+          aggregatedTradesRepository,
+          config.alchemy,
+          importantTrades,
+          leaderboard
+        )
         .toResource
       tradesWorkerGroup <- TradeWorkerGroup
         .of[IO](

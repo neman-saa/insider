@@ -3,7 +3,6 @@ import fs2.concurrent.Topic
 
 import scala.concurrent.duration.DurationInt
 
-
 object TelegramClientPlayground extends IOApp.Simple {
 
   import canoe.api._
@@ -21,11 +20,11 @@ object TelegramClientPlayground extends IOApp.Simple {
 
   def greetings[F[_]: TelegramClient: Async]: Scenario[F, Unit] =
     for {
-      chat <- Scenario.expect(command("hi").chat)
+      chat  <- Scenario.expect(command("hi").chat)
       fiber <- Scenario.eval(Stream.awakeEvery[F](5.seconds).evalMap(_ => chat.send(")")).compile.drain.start)
-      _ <- Scenario.expect(command("buy"))
-      _    <- Scenario.eval(fiber.cancel)
-      _    <- Scenario.done
+      _     <- Scenario.expect(command("buy"))
+      _     <- Scenario.eval(fiber.cancel)
+      _     <- Scenario.done
     } yield ()
 
   def run: IO[Unit] = app[IO]

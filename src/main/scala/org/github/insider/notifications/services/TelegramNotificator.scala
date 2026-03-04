@@ -10,11 +10,12 @@ import cats.effect.implicits._
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-class TelegramNotificator[F[_]: Async: TelegramClient](topic: Topic[F, Trade]) {
+class TelegramNotificator[F[_]: Async](importantTrades: Topic[F, Trade])(token: String) {
 
-  def create: F[Unit] = Bot
-    .polling[F]
-    .follow(notifications)
+  fs2
+    .Stream
+    .resource(TelegramClient[F](token))
+    .flatMap(implicit client => Bot.polling[F].follow(notifications[F](importantTrades)))
     .compile
     .drain
 
@@ -28,7 +29,7 @@ class TelegramNotificator[F[_]: Async: TelegramClient](topic: Topic[F, Trade]) {
       |token id = ${trade.tokenId}
       |""".stripMargin
 
-  private def notifications: Scenario[F, Unit] =
+  private def notifications[FCl[_]: Async: TelegramClient](topic: Topic[FCl, Trade]): Scenario[FCl, Unit] =
     for {
       chat <- Scenario.expect(command("start").chat)
       _    <- Scenario.eval(chat.send("Started, you will get message when trade appear"))
@@ -49,6 +50,6 @@ class TelegramNotificator[F[_]: Async: TelegramClient](topic: Topic[F, Trade]) {
 }
 
 object TelegramNotificator {
-  def of[F[_]: Async: TelegramClient: Logger](topic: Topic[F, Trade]): F[TelegramNotificator[F]] =
-    Slf4jLogger.create[F].map(_ => new TelegramNotificator[F](topic))
+  def of[F[_]: Async](topic: Topic[F, Trade])(token: String): F[TelegramNotificator[F]] =
+    Slf4jLogger.create[F].map(_ => new TelegramNotificator[F](topic)(token))
 }

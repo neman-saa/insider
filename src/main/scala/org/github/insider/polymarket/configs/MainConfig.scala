@@ -46,7 +46,6 @@ object MainConfig {
 
   implicit val telegramConfigReader: ConfigReader[TelegramConfig] = deriveReader
 
-
   def loadR[F[_]: Sync]: Resource[F, MainConfig] =
     Resource.eval(Sync[F].delay(ConfigSource.default.loadOrThrow[MainConfig]))
 }
