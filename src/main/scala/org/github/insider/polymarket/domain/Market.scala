@@ -11,8 +11,8 @@ final case class Market(
   conditionId: String,
   volume: Option[Volume],
   tokens: List[Token],
-  startDate: Option[Instant],
-  endDate: Option[Instant]
+  createdAt: Instant,
+  closedTime: Option[Instant]
 )
 
 object Market {
@@ -22,8 +22,8 @@ object Market {
         id          <- c.downField("id").as[String]
         question    <- c.downField("question").as[String]
         conditionId <- c.downField("conditionId").as[String]
-        startDate   <- c.downField("startDate").as[Option[Instant]]
-        endDate     <- c.downField("endDate").as[Option[Instant]]
+        createdAt   <- c.downField("createdAt").as[Instant]
+        closedTime     <- c.downField("closedTime").as[Option[Instant]]
         volume      <- c.downField("volume").as[Option[Volume]]
 
         stringOutcomes <- c.downField("outcomes").as[String]
@@ -48,6 +48,6 @@ object Market {
           .map {
             case ((outcome, tokenId), price) => Token(outcome, tokenId, price)
           }
-      } yield Market(id, question, conditionId, volume, tokens, startDate, endDate)
+      } yield Market(id, question, conditionId, volume, tokens, createdAt, closedTime)
     }
 }

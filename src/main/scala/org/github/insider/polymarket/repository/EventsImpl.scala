@@ -9,14 +9,14 @@ import org.github.insider.polymarket.domain.{Event, Volume}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{OffsetDateTime, ZoneOffset}
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
 class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Events[F] {
 
   override def insert(events: List[Event]): F[Int] =
-    Update[(String, Option[Volume], String, Option[OffsetDateTime], Option[OffsetDateTime], String)](
+    Update[(String, Option[Volume], String, OffsetDateTime, Option[OffsetDateTime], String)](
       """
-      |INSERT INTO events (id, volume, title, start_date, end_date, tags)
+      |INSERT INTO events (id, volume, title, created_at, closed_time, tags)
       |VALUES (?, ?, ?, ?, ?, splitByChar(',', ?))
       |""".stripMargin
     ).updateMany(
@@ -25,12 +25,21 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
           event.id,
           event.volume,
           event.title,
-          event.startDate.map(_.atOffset(ZoneOffset.UTC)),
-          event.endDate.map(_.atOffset(ZoneOffset.UTC)),
+          event.creationAt.atOffset(ZoneOffset.UTC),
+          event.closedTime.map(_.atOffset(ZoneOffset.UTC)),
           event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")
         )
       )
     ).transact(transactor)
+
+  override def getLatestClosedDate: F[Instant] =
+    fr"""
+        |SELECT ifNull(max(closed_time), 1609459200.0) FROM events
+        |"""
+      .stripMargin
+      .query[Instant]
+      .unique
+      .transact(transactor)
 }
 
 object EventsImpl {

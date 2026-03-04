@@ -24,12 +24,20 @@ private class EventsClientImpl[F[_]: Async](
   override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] =
     getEvents(baseUri(limit, offset).withQueryParam("tag_id", tag.id))
 
+  override def getLastClosedEvents(limit: Int, offset: Int = 0): F[List[Event]] =
+    getEvents(
+      baseUri(limit, offset)
+        .withQueryParam("ascending", "false")
+        .withQueryParam("order", "closedTime")
+        .withQueryParam("closed", "true")
+    )
+
   private def baseUri(limit: Int, offset: Int): Uri =
     GammaApiHost
       .addSegment("events")
       .withQueryParam("limit", limit)
       .withQueryParam("offset", offset)
-      .withQueryParam("order", "endDate")
+      .withQueryParam("order", "createdAt")
 
   private def getEvents(uri: Uri): F[List[Event]] = {
     client.get[List[Event]](uri) {

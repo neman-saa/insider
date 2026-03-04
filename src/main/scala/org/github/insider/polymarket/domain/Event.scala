@@ -8,8 +8,8 @@ import java.time.Instant
 final case class Event(
   id: String,
   title: String,
-  startDate: Option[Instant],
-  endDate: Option[Instant],
+  creationAt: Instant,
+  closedTime: Option[Instant],
   volume: Option[Volume],
   markets: Option[List[Market]],
   tags: Option[List[Tag]]
