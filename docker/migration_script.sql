@@ -1,10 +1,8 @@
 
--- DESCRIBE TABLE postgresql('insider_postgres:5432', 'insider', 'events', 'postgres', 'postgres') SETTINGS describe_compact_output = 1;
-
-CREATE TABLE events
+CREATE TABLE IF NOT EXISTS events
 (
     id Nullable(String),
-    volume Nullable(Decimal(38, 19)),
+    volume Nullable(Decimal(38, 9)),
     title Nullable(String),
     start_date Nullable(DateTime64(6)),
     end_date Nullable(DateTime64(6)),
@@ -14,13 +12,7 @@ ENGINE = MergeTree()
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
-
-INSERT INTO events
-SELECT * FROM postgresql('insider_postgres:5432', 'insider', 'events', 'postgres', 'postgres');
-
--- DESCRIBE TABLE postgresql('insider_postgres:5432', 'insider', 'markets', 'postgres', 'postgres') SETTINGS describe_compact_output = 1;
-
-CREATE TABLE markets
+CREATE TABLE NOT EXISTS markets
 (
     id Nullable(String),
     condition_id Nullable(String),
@@ -28,41 +20,30 @@ CREATE TABLE markets
     start_date Nullable(DateTime64(6)),
     end_date Nullable(DateTime64(6)),
     event_id Nullable(String),
-    volume Nullable(Decimal(38, 19))
+    volume Nullable(Decimal(38, 9))
 )
 ENGINE = MergeTree()
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
-INSERT INTO markets
-SELECT * FROM postgresql('insider_postgres:5432', 'insider', 'markets', 'postgres', 'postgres');
-
-
---DESCRIBE TABLE postgresql('insider_postgres:5432', 'insider', 'tokens', 'postgres', 'postgres') SETTINGS describe_compact_output = 1;
-
-CREATE TABLE tokens
+CREATE TABLE IF NOT EXISTS tokens
 (
     id Nullable(String),
     market_id Nullable(String),
     outcome Nullable(String),
-    last_price Nullable(Decimal(38, 19))
+    last_price Nullable(Decimal(38, 9))
 )
 ENGINE = MergeTree()
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
-INSERT INTO tokens
-SELECT * FROM postgresql('insider_postgres:5432', 'insider', 'tokens', 'postgres', 'postgres');
-
--- DESCRIBE TABLE postgresql('insider_postgres:5432', 'insider', 'trades', 'postgres', 'postgres') SETTINGS describe_compact_output = 1;
-
-CREATE TABLE trades
+CREATE TABLE IF NOT EXISTS trades
 (
     maker_address Nullable(String),
     token_id Nullable(String),
     side Nullable(String),
-    amount Nullable(Decimal(38, 19)),
-    total_price Nullable(Decimal(38, 19)),
+    amount Nullable(Decimal(38, 9)),
+    total_price Nullable(Decimal(38, 9)),
     polygon_tx_hash Nullable(String),
     created_at Nullable(String)
 )
@@ -70,5 +51,39 @@ ENGINE = MergeTree()
 ORDER BY (maker_address, token_id)
 SETTINGS allow_nullable_key = 1;
 
-INSERT INTO trades
-SELECT * FROM postgresql('insider_postgres:5432', 'insider', 'trades', 'postgres', 'postgres');
+CREATE TABLE IF NOT EXISTS trades_v2
+(
+    maker_address Nullable(String),
+    token_id Nullable(String),
+    side Nullable(String),
+    amount Nullable(Decimal(38, 9)),
+    total_price Nullable(Decimal(38, 9)),
+    block_num Nullable(Int64),
+    tx_hash Nullable(String),
+    tx_index Nullable(Int32),
+    block_timestamp Nullable(DateTime64(6))
+)
+ENGINE = MergeTree()
+ORDER BY (maker_address, token_id) -- review
+SETTINGS allow_nullable_key = 1;
+
+CREATE TABLE agg_trades
+(
+    maker_address String,
+    token_id String,
+    data SimpleAggregateFunction(
+        groupArrayArray,
+        Array(
+            Tuple(
+                Int64,           -- block number
+                Int64,           -- tx index
+                String,          -- side
+                Int64,           -- amount
+                Int64            -- total price
+            )
+        )
+    ),
+    last_date SimpleAggregateFunction(max, DateTime64(6))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (maker_address, token_id);

@@ -5,7 +5,7 @@ import cats.effect.{Async, Ref}
 import cats.syntax.all._
 import org.github.insider.alchemy.client.TransfersClient
 import org.github.insider.alchemy.processors.TransfersProcessor
-import org.github.insider.alchemy.repository.TradesRepository
+import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -14,6 +14,7 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
   client: TransfersClient[F],
   transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
+  aggregatedRepository: AggregatedTradesRepository[F],
   ctfAddress: String,
   step: Int
 )(nWorkers: Int) {
@@ -25,7 +26,16 @@ class TradeWorkerGroup[F[_]: Async: Parallel](
         (1 to nWorkers)
           .toList
           .traverse(i =>
-            TradeWorker(fromBlock, toBlock, client, ctfAddress, step, transfersProcessor, tradesRepository)(i)
+            TradeWorker(
+              fromBlock,
+              toBlock,
+              client,
+              ctfAddress,
+              step,
+              transfersProcessor,
+              tradesRepository,
+              aggregatedRepository
+            )(i)
           )
       _ <- workers.parTraverse_(_.run)
       _ <- logger.info("Application finished trades extraction")
@@ -37,12 +47,21 @@ object TradeWorkerGroup {
     client: TransfersClient[F],
     transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
+    aggregatedRepository: AggregatedTradesRepository[F],
     ctfAddress: String,
     step: Int
   )(nWorkers: Int): F[TradeWorkerGroup[F]] =
     Slf4jLogger
       .create[F]
       .map(logger =>
-        new TradeWorkerGroup(logger, client, transfersProcessor, tradesRepository, ctfAddress, step)(nWorkers)
+        new TradeWorkerGroup(
+          logger,
+          client,
+          transfersProcessor,
+          tradesRepository,
+          aggregatedRepository,
+          ctfAddress,
+          step
+        )(nWorkers)
       )
 }
