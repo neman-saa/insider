@@ -6,6 +6,11 @@ object Dependencies {
   private val slf4jVersion      = "2.0.0"
   private val flywayVersion     = "9.16.0"
   private val log4catsVersion   = "2.4.0"
+  private val telegramBotClient = "0.6.0"
+
+  object TelegramBot {
+    val client = "org.augustjune" %% "canoe" % telegramBotClient
+  }
 
   object Circe {
     private val circeVersion = "0.14.1"
