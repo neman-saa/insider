@@ -36,6 +36,8 @@ class TradesRealtimeFlow[F[_]: Async](
         trades               <- transfersProcessor.extractTradesFrom(transfers)
         _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
+        _ <- fs2.Stream.emits(trades).evalMap(topic.publish1).compile.drain
+
         nel = NonEmptyList.fromList(trades)
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
         _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
@@ -53,15 +55,8 @@ class TradesRealtimeFlow[F[_]: Async](
       _                     <- latestProcessedBlockR.set(latestProcessedBlock)
       _ <- fs2
         .Stream
-        .repeatEval(realtimeAction(latestProcessedBlockR))
-        .evalMap { trades =>
-          for {
-            leaderboard <- leaderboard.get
-            filtered     = trades.filter(leaderboard.map(_.address) contains _)
-          } yield filtered
-        }
-        .flatMap(fs2.Stream.emits)
-        .evalMap(topic.publish1)
+        .awakeEvery(3.seconds)
+        .evalMap(_ => realtimeAction(latestProcessedBlockR))
         .compile
         .drain
     } yield ()

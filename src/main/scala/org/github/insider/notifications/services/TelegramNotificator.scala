@@ -12,7 +12,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 class TelegramNotificator[F[_]: Async](importantTrades: Topic[F, Trade])(token: String) {
 
-  fs2
+  def create: F[Unit] = fs2
     .Stream
     .resource(TelegramClient[F](token))
     .flatMap(implicit client => Bot.polling[F].follow(notifications[F](importantTrades)))
@@ -36,7 +36,7 @@ class TelegramNotificator[F[_]: Async](importantTrades: Topic[F, Trade])(token: 
       fiber <-
         Scenario.eval(
           topic
-            .subscribe(10)
+            .subscribeUnbounded
             .evalMap(trade => chat.send(toMessage(trade)))
             .compile
             .drain
