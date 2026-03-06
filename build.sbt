@@ -32,5 +32,6 @@ lazy val root = (project in file("."))
       Circe.generic,
       Circe.optics,
       Circe.parser
-    )
+    ),
+    addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
   )

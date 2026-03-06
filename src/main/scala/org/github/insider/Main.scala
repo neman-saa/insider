@@ -1,5 +1,6 @@
 package org.github.insider
 
+import canoe.api.TelegramClient
 import cats.effect.{IO, IOApp, Ref}
 import fs2.concurrent.Topic
 import org.github.insider.alchemy.TradesRealtimeFlow
@@ -49,7 +50,6 @@ object Main extends IOApp.Simple {
           .start
           .toResource
       importantTrades <- Topic[IO, Trade].toResource
-      _               <- TelegramNotificator.of[IO](importantTrades)(config.telegram.token).toResource
       tradesRealtimeFlow <- TradesRealtimeFlow
         .of[IO](
           transfersClient,
@@ -60,8 +60,9 @@ object Main extends IOApp.Simple {
           importantTrades,
           leaderboard
         )
-      .toResource
-      notificator <- TelegramNotificator.of[IO](importantTrades)(config.telegram.token).toResource
+        .toResource
+      implicit0(client: TelegramClient[IO]) <- TelegramClient[IO](config.telegram.token)
+      _                                     <- TelegramNotificator.create[IO](importantTrades).start.toResource
       tradesWorkerGroup <- TradeWorkerGroup
         .of[IO](
           transfersClient,
@@ -72,25 +73,23 @@ object Main extends IOApp.Simple {
           1000
         )(2)
         .toResource
-    } yield notificator
+    } yield ()
 
-    resource use {
-      notificator =>
-        for {
-          logger <- Slf4jLogger.create[IO]
-          _      <- logger.info("Application started after successful resource acquisition...")
-          // _ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-01-01T00:00:00Z"), limit = 100, maxDepth = 150000)
-          /**
-            * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted
-            * using https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
-            */
-          // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
+    resource use { _ =>
+      for {
+        logger <- Slf4jLogger.create[IO]
+        _      <- logger.info("Application started after successful resource acquisition...")
+        // _ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-01-01T00:00:00Z"), limit = 100, maxDepth = 150000)
+        /**
+          * Start with the following range: 66157355 - 81051370 (the whole 2025 year) Block numbers were extracted using
+          * https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
+          */
+        // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
 
-          // _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
-          // _ <- tradesRealtimeFlow.runForever
-          _ <- notificator.create
-          _ <- logger.info("Shutting down application...")
-        } yield ()
+        // _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
+        // _ <- tradesRealtimeFlow.runForever
+        _ <- logger.info("Shutting down application...")
+      } yield ()
     }
   }
 }
