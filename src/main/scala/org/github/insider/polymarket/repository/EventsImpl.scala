@@ -4,33 +4,34 @@ import cats.effect.kernel.Async
 import cats.syntax.all._
 import doobie.implicits.javatimedrivernative._
 import doobie.syntax.all._
-import doobie.{Transactor, Update}
-import org.github.insider.polymarket.domain.{Event, Volume}
+import doobie.{ConnectionIO, Transactor}
+import org.github.insider.polymarket.domain.Event
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{Instant, OffsetDateTime, ZoneOffset, ZonedDateTime}
+import java.time.{Instant, ZonedDateTime}
 
 class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Events[F] {
 
+  private def createQuery(events: List[Event]): ConnectionIO[Int] = {
+    val insert = fr"INSERT INTO events (id, volume, title, created_at, closed_time, tags) VALUES"
+    val values = events
+      .map(event => fr"""
+         |(
+         |${event.id},
+         |${event.volume},
+         |${event.title},
+         |${event.createdAt},
+         |${event.closedTime},
+         |splitByChar(',', ${event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")})
+         |)
+         |""".stripMargin)
+      .reduce(_ ++ _)
+    (insert ++ values).update.run
+  }
+
   override def insert(events: List[Event]): F[Int] =
-    Update[(String, Option[Volume], String, OffsetDateTime, Option[OffsetDateTime], String)](
-      """
-      |INSERT INTO events (id, volume, title, created_at, closed_time, tags)
-      |VALUES (?, ?, ?, ?, ?, splitByChar(',', ?))
-      |""".stripMargin
-    ).updateMany(
-      events.map(event =>
-        (
-          event.id,
-          event.volume,
-          event.title,
-          event.createdAt.atOffset(ZoneOffset.UTC),
-          event.closedTime.map(_.atOffset(ZoneOffset.UTC)),
-          event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")
-        )
-      )
-    ).transact(transactor)
+    createQuery(events).transact(transactor)
 
   override def getLatestClosedDate: F[Instant] =
     fr"""

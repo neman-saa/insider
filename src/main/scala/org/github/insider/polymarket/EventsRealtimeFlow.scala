@@ -22,7 +22,7 @@ class EventsRealtimeFlow[F[_]: Async](
     def run(lastClosedTime: Ref[F, Instant]): F[Unit] =
       for {
         lastClosedTimeR <- lastClosedTime.get
-        events          <- getAllEventsAfterDate(lastClosedTimeR, 10)
+        events          <- getAllEventsAfterDate(lastClosedTimeR, 100)
         _               <- eventsImpl.insert(events)
         _ <- marketsImpl.insert(events.flatMap(event => event.markets.getOrElse(Nil).map(market => (event.id, market))))
         _ <- lastClosedTime.set(events.map(_.closedTime.get).maxBy(_.getEpochSecond))
@@ -33,7 +33,7 @@ class EventsRealtimeFlow[F[_]: Async](
       for {
         newEvents <- eventsClient
           .getLastClosedEvents(limit, offset)
-          .map(_.filter(_.closedTime.get.getEpochSecond < date.getEpochSecond))
+          .map(_.filter(_.closedTime.get.getEpochSecond > date.getEpochSecond))
         res <-
           if (newEvents.length < limit) (newEvents ++ events).pure[F]
           else getAllEventsAfterDate(date, limit, offset + limit, newEvents ++ events)
