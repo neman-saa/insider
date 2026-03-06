@@ -1,7 +1,5 @@
 package org.github.insider
 
-import canoe.api._
-import canoe.syntax._
 import cats.effect.{IO, IOApp, Ref}
 import fs2.concurrent.Topic
 import org.github.insider.alchemy.TradesRealtimeFlow
@@ -16,7 +14,6 @@ import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.domain.Trade
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
-import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -63,7 +60,8 @@ object Main extends IOApp.Simple {
           importantTrades,
           leaderboard
         )
-        .toResource
+      .toResource
+      notificator <- TelegramNotificator.of[IO](importantTrades)(config.telegram.token).toResource
       tradesWorkerGroup <- TradeWorkerGroup
         .of[IO](
           transfersClient,
@@ -74,14 +72,10 @@ object Main extends IOApp.Simple {
           1000
         )(2)
         .toResource
-      // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
-      eventWorkerGroup <- EventsExtractorWorkerGroup
-        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
-        .toResource
-    } yield (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow)
+    } yield notificator
 
     resource use {
-      case (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow) =>
+      notificator =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -92,9 +86,9 @@ object Main extends IOApp.Simple {
             */
           // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
 
-          _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
-          _ <- tradesRealtimeFlow.runForever
-
+          // _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
+          // _ <- tradesRealtimeFlow.runForever
+          _ <- notificator.create
           _ <- logger.info("Shutting down application...")
         } yield ()
     }

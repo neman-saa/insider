@@ -44,6 +44,7 @@ class TelegramNotificator[F[_]: Async](importantTrades: Topic[F, Trade])(token: 
         )
       _ <- Scenario.expect(command("stop"))
       _ <- Scenario.eval(fiber.cancel)
+      _ <- Scenario.eval(chat.send("Stopped"))
       _ <- Scenario.done
     } yield ()
 

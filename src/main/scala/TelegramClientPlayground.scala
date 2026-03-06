@@ -1,5 +1,8 @@
 import cats.effect.{IO, IOApp}
 import fs2.concurrent.Topic
+import org.github.insider.notifications.services.TelegramNotificator
+import org.github.insider.polymarket.domain.Side.Buy
+import org.github.insider.polymarket.domain.Trade
 
 import scala.concurrent.duration.DurationInt
 
@@ -27,5 +30,15 @@ object TelegramClientPlayground extends IOApp.Simple {
       _     <- Scenario.done
     } yield ()
 
-  def run: IO[Unit] = app[IO]
+  def run: IO[Unit] = for {
+    importantTrades <- Topic[IO, Trade]
+    _ <- fs2
+      .Stream
+      .awakeEvery[IO](1.seconds)
+      .evalMap(_ => importantTrades.publish1(Trade("testing", "testing", Buy, 10, 10, 10, "xxxxxx", 10, None)))
+      .compile
+      .drain
+      .start
+    _ <- TelegramNotificator.of[IO](importantTrades)("8583759455:AAGY5FsULpjKl9Pj2KB59isbRY-tXjH2og0").flatMap(_.create)
+  } yield ()
 }
