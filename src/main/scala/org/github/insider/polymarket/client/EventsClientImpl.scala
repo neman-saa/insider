@@ -9,6 +9,7 @@ import org.http4s.{Status, Uri}
 import org.http4s.client._
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import org.github.insider.polymarket.codecs.CustomCodecs._
 
 import java.time.Instant
 

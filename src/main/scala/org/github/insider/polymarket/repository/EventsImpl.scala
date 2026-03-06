@@ -2,14 +2,14 @@ package org.github.insider.polymarket.repository
 
 import cats.effect.kernel.Async
 import cats.syntax.all._
-import doobie.implicits._
 import doobie.implicits.javatimedrivernative._
+import doobie.syntax.all._
 import doobie.{Transactor, Update}
 import org.github.insider.polymarket.domain.{Event, Volume}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{Instant, OffsetDateTime, ZoneOffset}
+import java.time.{Instant, OffsetDateTime, ZoneOffset, ZonedDateTime}
 
 class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Events[F] {
 
@@ -25,7 +25,7 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
           event.id,
           event.volume,
           event.title,
-          event.creationAt.atOffset(ZoneOffset.UTC),
+          event.createdAt.atOffset(ZoneOffset.UTC),
           event.closedTime.map(_.atOffset(ZoneOffset.UTC)),
           event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")
         )
@@ -34,10 +34,11 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
 
   override def getLatestClosedDate: F[Instant] =
     fr"""
-        |SELECT ifNull(max(closed_time), 1609459200.0) FROM events
+        |SELECT ifNull(max(closed_time), toDateTime64(1609459200, 6)) FROM events
         |"""
       .stripMargin
-      .query[Instant]
+      .query[ZonedDateTime]
+      .map(Instant.from(_))
       .unique
       .transact(transactor)
 }

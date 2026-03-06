@@ -8,7 +8,7 @@ import java.time.Instant
 final case class Event(
   id: String,
   title: String,
-  creationAt: Instant,
+  createdAt: Instant,
   closedTime: Option[Instant],
   volume: Option[Volume],
   markets: Option[List[Market]],

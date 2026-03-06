@@ -7,6 +7,7 @@ import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.persistance.Database
+import org.github.insider.polymarket.EventsRealtimeFlow
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
@@ -28,27 +29,28 @@ object Main extends IOApp.Simple {
       marketsImpl                <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl                 <- EventsImpl.of[IO](transactor).toResource
       transfersProcessor         <- TransfersProcessorImpl.of[IO]().toResource
-      tradesRealtimeFlow <- TradesRealtimeFlow
-        .of[IO](transfersClient, transfersProcessor, tradesRepository, aggregatedTradesRepository, config.alchemy)
-        .toResource
-      tradesWorkerGroup <- TradeWorkerGroup
-        .of[IO](
-          transfersClient,
-          transfersProcessor,
-          tradesRepository,
-          aggregatedTradesRepository,
-          config.alchemy.ctfAddress,
-          1000
-        )(2)
-        .toResource
+//      tradesRealtimeFlow <- TradesRealtimeFlow
+//        .of[IO](transfersClient, transfersProcessor, tradesRepository, aggregatedTradesRepository, config.alchemy)
+//        .toResource
+//      tradesWorkerGroup <- TradeWorkerGroup
+//        .of[IO](
+//          transfersClient,
+//          transfersProcessor,
+//          tradesRepository,
+//          aggregatedTradesRepository,
+//          config.alchemy.ctfAddress,
+//          1000
+//        )(2)
+//        .toResource
+      eventsRealtimeFlow <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
       // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
-      eventWorkerGroup <- EventsExtractorWorkerGroup
-        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
-        .toResource
-    } yield (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow)
+//      eventWorkerGroup <- EventsExtractorWorkerGroup
+//        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
+//        .toResource
+    } yield (eventsRealtimeFlow)
 
     resource use {
-      case (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow) =>
+      case (eventsRealtimeFlow) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -59,8 +61,7 @@ object Main extends IOApp.Simple {
             */
           // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
 
-          _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
-          _ <- tradesRealtimeFlow.runForever
+          _ <- eventsRealtimeFlow.runForever
 
           _ <- logger.info("Shutting down application...")
         } yield ()
