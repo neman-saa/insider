@@ -40,8 +40,8 @@ class TradeWorker[F[_]: Async](
       )
 
       nel = NonEmptyList.fromList(trades)
-      _ <- nel.fold(0.pure[F])(tradesRepository.insert)
-      _ <- nel.fold(0.pure[F])(aggregatedRepository.insert)
+      _  <- nel.fold(0.pure[F])(tradesRepository.insert)
+      _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
       _ <- logger.info(s"[worker-$workerNumber] Finished range $fromBlock - $toBlock")
     } yield ()

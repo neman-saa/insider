@@ -4,12 +4,14 @@ import cats.data.NonEmptyList
 import cats.effect.Ref
 import cats.effect.kernel.Async
 import cats.syntax.all._
+import fs2.concurrent.Topic
 import org.github.insider.alchemy.client.TransfersClient
-import org.github.insider.alchemy.domain.AssetTransfer
+import org.github.insider.alchemy.domain.{AssetTransfer, User}
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
+import org.github.insider.polymarket.domain.Trade
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -21,10 +23,12 @@ class TradesRealtimeFlow[F[_]: Async](
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
+  topic: Topic[F, Trade],
+  leaderboard: Ref[F, List[User]]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
-    def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[Unit] =
+    def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 1000
@@ -32,22 +36,29 @@ class TradesRealtimeFlow[F[_]: Async](
         trades               <- transfersProcessor.extractTradesFrom(transfers)
         _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
+        _ <- fs2.Stream.emits(trades).evalMap(topic.publish1).compile.drain
+
         nel = NonEmptyList.fromList(trades)
-        _ <- nel.fold(0.pure[F])(tradesRepository.insert)
-        _ <- nel.fold(0.pure[F])(aggregatedRepository.insert)
+        _  <- nel.fold(0.pure[F])(tradesRepository.insert)
+        _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
         _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
         _ <- Async[F].sleep(3.seconds)
-      } yield ()
+      } yield trades
 
     for {
       latestProcessedBlockR <- Ref.empty[F, Long]
       latestProcessedBlock  <- tradesRepository.getLatestBlock
       _                     <- latestProcessedBlockR.set(latestProcessedBlock)
-      _                     <- fs2.Stream.repeatEval(realtimeAction(latestProcessedBlockR)).compile.drain
+      _ <- fs2
+        .Stream
+        .awakeEvery(3.seconds)
+        .evalMap(_ => realtimeAction(latestProcessedBlockR))
+        .compile
+        .drain
     } yield ()
   }
 
@@ -93,6 +104,8 @@ object TradesRealtimeFlow {
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,
+    topic: Topic[F, Trade],
+    leaderboard: Ref[F, List[User]]
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -102,7 +115,9 @@ object TradesRealtimeFlow {
           transfersProcessor,
           tradesRepository,
           aggregatedRepository,
-          alchemyConfig
+          alchemyConfig,
+          topic,
+          leaderboard
         )(logger)
       )
 }

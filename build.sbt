@@ -14,6 +14,7 @@ lazy val root = (project in file("."))
       apacheLog4j,
       migrations,
       clickhouse,
+      TelegramBot.client,
       Testing.log      % Test,
       Testing.test     % Test,
       Testing.catsTest % Test,
@@ -31,5 +32,6 @@ lazy val root = (project in file("."))
       Circe.generic,
       Circe.optics,
       Circe.parser
-    )
+    ),
+    addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
   )
