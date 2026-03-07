@@ -51,40 +51,22 @@ object Main extends IOApp.Simple {
           .drain
           .start
           .toResource
-      importantTrades <- Topic[IO, Trade].toResource
-      client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
-      eventClient     <- EventsClientImpl.of[IO](client).toResource
-      tagsClient      <- TagsClientImpl.of[IO](client).toResource
-      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
-      marketsImpl     <- MarketsImpl.of[IO](transactor).toResource
-      eventsImpl      <- EventsImpl.of[IO](transactor).toResource
-      transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
-      tradesRealtimeFlow <- TradesRealtimeFlow
-        .of[IO](
-          transfersClient,
-          transfersProcessor,
-          tradesRepository,
-          aggregatedTradesRepository,
-          config.alchemy,
-          importantTrades,
-          leaderboard
-        )
-        .toResource
+      importantTrades                       <- Topic[IO, Trade].toResource
       implicit0(client: TelegramClient[IO]) <- TelegramClient[IO](config.telegram.token)
       _                                     <- TelegramNotificator.create[IO](importantTrades).start.toResource
-      tradesWorkerGroup <- TradeWorkerGroup
-        .of[IO](
-          transfersClient,
-          transfersProcessor,
-          tradesRepository,
-          aggregatedTradesRepository,
-          config.alchemy.ctfAddress,
-          100
-        )(5)
-        .toResource
-    } yield ()
+      realtimeTrades <- TradesRealtimeFlow.of[IO](
+        transfersClient,
+        transfersProcessor,
+        tradesRepository,
+        aggregatedTradesRepository,
+        config.alchemy,
+        importantTrades,
+        leaderboard
+      ).toResource
+      realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
+    } yield (realtimeTrades, realtimeEvents)
 
-    resource use { _ =>
+    resource use { case (realtimeTrades, realtimeEvents) =>
       for {
         logger <- Slf4jLogger.create[IO]
         _      <- logger.info("Application started after successful resource acquisition...")
@@ -94,27 +76,10 @@ object Main extends IOApp.Simple {
           * https://docs.etherscan.io/api-reference/endpoint/getblocknobytime
           */
         // _ <- tradesFlow.run(77_481_300, 81_500_000, 1000) // result in 78_763_244 trades
-      // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
-//      eventWorkerGroup <- EventsExtractorWorkerGroup
-//        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
-//        .toResource
-    } yield (eventsRealtimeFlow)
-
-    resource use {
-      case (eventsRealtimeFlow) =>
-        for {
-          logger <- Slf4jLogger.create[IO]
-          _      <- logger.info("Application started after successful resource acquisition...")
-
-          // _ <- eventWorkerGroup.getCollectedEvents(Instant.parse("2026-03-10T00:00:00Z"), limit = 1000, maxDepth = 500_000)
-
-          // _ <- tradesWorkerGroup.run(83_300_500, 83_724_000)
-
-          // _ <- tradesRealtimeFlow.runForever
-
-        // _ <- tradesWorkerGroup.run(51_500_000, 83_599_513)
-        // _ <- tradesRealtimeFlow.runForever
-        _ <- logger.info("Shutting down application...")
+        // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
+        //      eventWorkerGroup <- EventsExtractorWorkerGroup
+        //        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
+        //        .toResource
       } yield ()
     }
   }

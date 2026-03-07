@@ -8,10 +8,7 @@ import doobie.postgres.implicits._
 import org.github.insider.polymarket.domain.{Market, Volume}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-import org.github.insider.polymarket.domain.Volume._
-
-import java.time.{Instant, OffsetDateTime, ZoneOffset}
-import java.time.zone.ZoneOffsetTransitionRule.TimeDefinition.UTC
+import java.time.{OffsetDateTime, ZoneOffset}
 
 class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Markets[F] {
 

@@ -36,7 +36,13 @@ class TradesRealtimeFlow[F[_]: Async](
         trades               <- transfersProcessor.extractTradesFrom(transfers)
         _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
-        _ <- fs2.Stream.emits(trades).evalMap(topic.publish1).compile.drain
+        board <- leaderboard.get
+        _ <- fs2
+          .Stream
+          .emits(trades.filter(trade => board.contains(trade.makerAddress)))
+          .evalMap(topic.publish1)
+          .compile
+          .drain
 
         nel = NonEmptyList.fromList(trades)
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
