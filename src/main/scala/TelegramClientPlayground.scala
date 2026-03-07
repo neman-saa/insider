@@ -30,15 +30,5 @@ object TelegramClientPlayground extends IOApp.Simple {
       _     <- Scenario.done
     } yield ()
 
-  def run: IO[Unit] = for {
-    importantTrades <- Topic[IO, Trade]
-    _ <- fs2
-      .Stream
-      .awakeEvery[IO](1.seconds)
-      .evalMap(_ => importantTrades.publish1(Trade("testing", "testing", Buy, 10, 10, 10, "xxxxxx", 10, None)))
-      .compile
-      .drain
-      .start
-    _ <- TelegramNotificator.of[IO](importantTrades)("8583759455:AAGY5FsULpjKl9Pj2KB59isbRY-tXjH2og0").flatMap(_.create)
-  } yield ()
+  def run: IO[Unit] = IO.unit
 }
