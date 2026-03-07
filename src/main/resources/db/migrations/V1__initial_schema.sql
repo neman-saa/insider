@@ -43,27 +43,13 @@ CREATE TABLE IF NOT EXISTS trades
     side Nullable(String),
     amount Nullable(Decimal(38, 9)),
     total_price Nullable(Decimal(38, 9)),
-    polygon_tx_hash Nullable(String),
-    created_at Nullable(String)
-)
-ENGINE = MergeTree()
-ORDER BY (maker_address, token_id)
-SETTINGS allow_nullable_key = 1;
-
-CREATE TABLE IF NOT EXISTS trades_v2
-(
-    maker_address Nullable(String),
-    token_id Nullable(String),
-    side Nullable(String),
-    amount Nullable(Decimal(38, 9)),
-    total_price Nullable(Decimal(38, 9)),
     block_num Nullable(Int64),
     tx_hash Nullable(String),
     tx_index Nullable(Int32),
     block_timestamp Nullable(DateTime64(6))
 )
 ENGINE = MergeTree()
-ORDER BY (maker_address, token_id) -- review
+ORDER BY (maker_address, token_id)
 SETTINGS allow_nullable_key = 1;
 
 CREATE TABLE agg_trades
@@ -82,7 +68,7 @@ CREATE TABLE agg_trades
             )
         )
     ),
-    last_date SimpleAggregateFunction(max, DateTime64(6))
+    last_activity_timestamp SimpleAggregateFunction(max, UInt64)
 )
 ENGINE = AggregatingMergeTree
 ORDER BY (maker_address, token_id);
