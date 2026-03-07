@@ -7,6 +7,7 @@ import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.persistance.Database
+import org.github.insider.polymarket.EventsRealtimeFlow
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
@@ -45,13 +46,13 @@ object Main extends IOApp.Simple {
         )(5)
         .toResource
       // _ <- DbMigrations.migrate[IO](config.dbConfig).toResource // Neither flyway nor Liquibase support CH migrations, write custom tool
-      eventWorkerGroup <- EventsExtractorWorkerGroup
-        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
-        .toResource
-    } yield (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow)
+//      eventWorkerGroup <- EventsExtractorWorkerGroup
+//        .of[IO](eventClient, marketsImpl, eventsImpl)(workersNumber = 3)
+//        .toResource
+    } yield (eventsRealtimeFlow)
 
     resource use {
-      case (eventWorkerGroup, tradesWorkerGroup, tradesRealtimeFlow) =>
+      case (eventsRealtimeFlow) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")

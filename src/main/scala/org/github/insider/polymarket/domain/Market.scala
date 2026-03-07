@@ -4,6 +4,7 @@ import cats.syntax.all._
 import io.circe._
 
 import java.time.Instant
+import scala.util.Try
 
 final case class Market(
   id: String,
@@ -11,20 +12,23 @@ final case class Market(
   conditionId: String,
   volume: Option[Volume],
   tokens: List[Token],
-  startDate: Option[Instant],
-  endDate: Option[Instant]
+  createdAt: Instant,
+  closedTime: Option[Instant]
 )
 
 object Market {
   implicit val circeDecoder: Decoder[Market] =
     Decoder.instance[Market] { c =>
       for {
-        id          <- c.downField("id").as[String]
-        question    <- c.downField("question").as[String]
-        conditionId <- c.downField("conditionId").as[String]
-        startDate   <- c.downField("startDate").as[Option[Instant]]
-        endDate     <- c.downField("endDate").as[Option[Instant]]
-        volume      <- c.downField("volume").as[Option[Volume]]
+        id            <- c.downField("id").as[String]
+        question      <- c.downField("question").as[String]
+        conditionId   <- c.downField("conditionId").as[String]
+        createdAt     <- c.downField("createdAt").as[Instant]
+        closedTimeStr <- c.downField("closedTime").as[Option[String]]
+        closedTime = closedTimeStr.flatMap(str =>
+          Try(Instant.parse(str.replace(" ", "T").replace("+00", "Z"))).toOption
+        )
+        volume <- c.downField("volume").as[Option[Volume]]
 
         stringOutcomes <- c.downField("outcomes").as[String]
         outcomesJson <- parser.parse(stringOutcomes).leftMap(parseFailure => DecodingFailure(parseFailure.message, Nil))
@@ -48,6 +52,6 @@ object Market {
           .map {
             case ((outcome, tokenId), price) => Token(outcome, tokenId, price)
           }
-      } yield Market(id, question, conditionId, volume, tokens, startDate, endDate)
+      } yield Market(id, question, conditionId, volume, tokens, createdAt, closedTime)
     }
 }
