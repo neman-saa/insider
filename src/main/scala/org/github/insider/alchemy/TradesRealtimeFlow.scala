@@ -1,5 +1,6 @@
 package org.github.insider.alchemy
 
+import cats.Parallel
 import cats.data.NonEmptyList
 import cats.effect.Ref
 import cats.effect.kernel.Async
@@ -10,36 +11,46 @@ import org.github.insider.alchemy.domain.{AssetTransfer, User}
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
+import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.Trade
+import org.github.insider.leaderboard.TradeNotification
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import scala.concurrent.duration.DurationInt
 
-class TradesRealtimeFlow[F[_]: Async](
+class TradesRealtimeFlow[F[_]: Async: Parallel](
   client: TransfersClient[F],
   transfersProcessor: TransfersProcessor[F],
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
-  topic: Topic[F, Trade],
-  leaderboard: Ref[F, List[User]]
+  topic: Topic[F, TradeNotification],
+  leaderboards: Leaderboards[F],
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 1000
+        toBlock               = latestProcessedBlock + 100
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
-        _                    <- logger.info(s"Trades extracted - ${trades.size}")
 
-        board <- leaderboard.get
+        notifications <- trades.traverse { trade =>
+          leaderboards.find(HexAddress(trade.makerAddress)).map { leaderboardEntries =>
+            TradeNotification(trade, leaderboardEntries)
+          }
+        }
+
+        filteredNotifications = notifications.filter { notification =>
+          notification.leaderboardEntries.nonEmpty && notification.trade.singleTokenPrice < BigDecimal(0.9)
+        }
+
         _ <- fs2
           .Stream
-          .emits(trades.filter(trade => board.contains(trade.makerAddress)))
+          .emits(filteredNotifications)
           .evalMap(topic.publish1)
           .compile
           .drain
@@ -61,8 +72,7 @@ class TradesRealtimeFlow[F[_]: Async](
       _                     <- latestProcessedBlockR.set(latestProcessedBlock)
       _ <- fs2
         .Stream
-        .awakeEvery(3.seconds)
-        .evalMap(_ => realtimeAction(latestProcessedBlockR))
+        .repeatEval(realtimeAction(latestProcessedBlockR))
         .compile
         .drain
     } yield ()
@@ -94,24 +104,24 @@ class TradesRealtimeFlow[F[_]: Async](
     }
 
     for {
-      _             <- logger.info(s"Starting range $fromBlock - $toBlock")
+      _             <- logger.info(s"Starting extraction for range $fromBlock - $toBlock")
       transfersTo   <- rec(Nil, None, Some(alchemyConfig.ctfAddress), None)
       transfersFrom <- rec(Nil, None, None, Some(alchemyConfig.ctfAddress))
       transfers      = transfersTo.reverse ++ transfersFrom.reverse
-      _             <- logger.info(s"Transfers fetched - ${transfers.size}")
+      _ <- logger.info(s"Finished extraction for range $fromBlock - $toBlock with ${transfers.size} transfers")
     } yield transfers
   }
 }
 
 object TradesRealtimeFlow {
-  def of[F[_]: Async](
+  def of[F[_]: Async: Parallel](
     transfersClient: TransfersClient[F],
     transfersProcessor: TransfersProcessor[F],
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,
-    topic: Topic[F, Trade],
-    leaderboard: Ref[F, List[User]]
+    topic: Topic[F, TradeNotification],
+    leaderboards: Leaderboards[F],
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -123,7 +133,7 @@ object TradesRealtimeFlow {
           aggregatedRepository,
           alchemyConfig,
           topic,
-          leaderboard
+          leaderboards
         )(logger)
       )
 }

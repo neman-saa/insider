@@ -7,29 +7,20 @@ import fs2.concurrent.Topic
 import org.github.insider.polymarket.domain.Trade
 import cats.syntax.all._
 import cats.effect.implicits._
+import org.github.insider.leaderboard.TradeNotification
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 object TelegramNotificator {
 
-  def create[F[_]: Async: TelegramClient](importantTrades: Topic[F, Trade]): F[Unit] =
+  def create[F[_]: Async: TelegramClient](importantTrades: Topic[F, TradeNotification]): F[Unit] =
     Bot
       .polling[F]
       .follow(notifications[F](importantTrades))
       .compile
       .drain
 
-  private def toMessage(trade: Trade): String =
-    s"""
-      |User with address: ${trade.makerAddress}
-      |bought ${trade.amount} tokens for ${trade.totalPrice}
-      |SIDE = ${trade.side}
-      |timestamp = ${trade.blockTimestamp.getOrElse("???")}
-      |block number = ${trade.blockNum}
-      |token id = ${trade.tokenId}
-      |""".stripMargin
-
-  private def notifications[F[_]: Async: TelegramClient](topic: Topic[F, Trade]): Scenario[F, Unit] =
+  private def notifications[F[_]: Async: TelegramClient](topic: Topic[F, TradeNotification]): Scenario[F, Unit] =
     for {
       chat <- Scenario.expect(command("start").chat)
       _    <- Scenario.eval(chat.send("Started, you will get message when trade appear"))
@@ -47,5 +38,31 @@ object TelegramNotificator {
       _ <- Scenario.eval(chat.send("Stopped"))
       _ <- Scenario.done
     } yield ()
+
+  private def toMessage(notification: TradeNotification): String = {
+    val leaderboard =
+      notification
+        .leaderboardEntries
+        .map {
+          case (name, entry) =>
+            s"""
+           |Leaderboard name: ${name.value}
+           |Leaderboard stat: ${entry.prettyPrint}
+           |""".stripMargin
+        }
+        .mkString("\n")
+
+    s"""
+       |User address: ${notification.trade.makerAddress}
+       |Operation side: ${notification.trade.side}
+       |Tokens amount: ${notification.trade.amount / 1_000_000}
+       |Total price: ${notification.trade.totalPrice}
+       |Single token price: ${notification.trade.singleTokenPrice}
+       |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("???")}
+       |Token ID: ${notification.trade.tokenId}
+       |
+       |$leaderboard
+       |""".stripMargin
+  }
 
 }
