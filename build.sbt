@@ -14,6 +14,7 @@ lazy val root = (project in file("."))
       apacheLog4j,
       migrations,
       clickhouse,
+      cache,
       TelegramBot.client,
       Testing.log      % Test,
       Testing.test     % Test,

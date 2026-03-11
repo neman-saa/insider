@@ -27,6 +27,7 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
                         |)
                         |""".stripMargin)
       .reduce(_ ++ _)
+
     (insert ++ values).update.run
   }
 

@@ -16,7 +16,11 @@ class AggregatedTradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], log
     extends AggregatedTradesRepository[F] {
 
   override def insert(trades: NonEmptyList[Trade]): F[Int] =
-    createQuery(trades.toList).update.run.transact(transactor)
+    createQuery(trades.toList)
+      .update
+      .run
+      .transact(transactor)
+      .flatTap(rows => logger.info(s"Inserted $rows trades in 'agg_trades' table"))
 
   private def createQuery(trades: List[Trade]): Fragment = {
     val insert = fr"INSERT INTO agg_trades (maker_address, token_id, data, last_activity_timestamp) VALUES"

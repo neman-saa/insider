@@ -20,8 +20,8 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
         | id,
         | condition_id,
         | question,
-        | start_date,
-        | end_date,
+        | created_at,
+        | closed_time,
         | event_id,
         | volume
         |)
