@@ -15,6 +15,7 @@ import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.Trade
 import org.github.insider.leaderboard.TradeNotification
+import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -28,6 +29,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   alchemyConfig: AlchemyConfig,
   topic: Topic[F, TradeNotification],
   leaderboards: Leaderboards[F],
+  eventsCached: EventsCached[F]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -39,11 +41,12 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
         notifications <- trades.traverse { trade =>
-          leaderboards.find(HexAddress(trade.makerAddress)).map { leaderboardEntries =>
-            TradeNotification(trade, leaderboardEntries)
-          }
+          for {
+            leaderboardEntries <- leaderboards.find(HexAddress(trade.makerAddress))
+            event              <- eventsCached.find(trade.tokenId)
+          } yield TradeNotification(trade, leaderboardEntries, event)
         }
-
+        _ <- logger.info(s"Notification: ${notifications.take(10).map(_.event.slug)}")
         filteredNotifications = notifications.filter { notification =>
           notification.leaderboardEntries.nonEmpty && notification.trade.singleTokenPrice < BigDecimal(0.9)
         }
@@ -122,6 +125,7 @@ object TradesRealtimeFlow {
     alchemyConfig: AlchemyConfig,
     topic: Topic[F, TradeNotification],
     leaderboards: Leaderboards[F],
+    eventsCached: EventsCached[F]
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -133,7 +137,8 @@ object TradesRealtimeFlow {
           aggregatedRepository,
           alchemyConfig,
           topic,
-          leaderboards
+          leaderboards,
+          eventsCached
         )(logger)
       )
 }

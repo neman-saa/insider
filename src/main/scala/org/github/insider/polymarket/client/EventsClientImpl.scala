@@ -2,7 +2,7 @@ package org.github.insider.polymarket.client
 
 import cats.effect.Async
 import cats.syntax.all._
-import org.github.insider.polymarket.domain.{Event, Tag}
+import org.github.insider.polymarket.domain.{Event, Market, Tag}
 import org.http4s.circe.CirceEntityCodec.circeEntityDecoder
 import org.http4s.client.Client
 import org.http4s.{Status, Uri}
@@ -17,6 +17,11 @@ private class EventsClientImpl[F[_]: Async](
   client: Client[F],
   logger: Logger[F],
 ) extends EventsClient[F] {
+
+  override def getEventByToken(token: String): F[Option[Event]] =
+    getMarkets(baseUriMarket(1, 0).withQueryParam("clob_token_ids", List(token))).map {
+      case List(market) => market.events.flatMap(_.headOption.map(_.copy(markets = Some(List(market)))))
+    }
 
   override def getEventsByMaxEndDate(maxEndDate: Instant, limit: Int, offset: Int): F[List[Event]] = getEvents(
     baseUri(limit, offset).withQueryParam("end_date_max", maxEndDate.toString)
@@ -40,6 +45,13 @@ private class EventsClientImpl[F[_]: Async](
       .withQueryParam("offset", offset)
       .withQueryParam("order", "createdAt")
 
+  private def baseUriMarket(limit: Int, offset: Int): Uri =
+    GammaApiHost
+      .addSegment("markets")
+      .withQueryParam("limit", limit)
+      .withQueryParam("offset", offset)
+      .withQueryParam("order", "createdAt")
+
   private def getEvents(uri: Uri): F[List[Event]] = {
     client.get[List[Event]](uri) {
       case Status.Successful(response) =>
@@ -53,6 +65,23 @@ private class EventsClientImpl[F[_]: Async](
         }
       case other =>
         logger.error(s"Unsuccessful response received while fetching events: $other") >>
+          Async[F].raiseError(new Throwable("todo"))
+    }
+  }
+
+  private def getMarkets(uri: Uri): F[List[Market]] = {
+    client.get[List[Market]](uri) {
+      case Status.Successful(response) =>
+        response.attemptAs[List[Market]].value.flatMap {
+          case Left(e) =>
+            logger
+              .error(s"Unable to parse getMarkets response. Request params: ${uri.params}. Error: ${e.message}")
+              .as(List.empty)
+          case Right(markets) =>
+            markets.pure[F]
+        }
+      case other =>
+        logger.error(s"Unsuccessful response received while fetching markets: $other") >>
           Async[F].raiseError(new Throwable("todo"))
     }
   }

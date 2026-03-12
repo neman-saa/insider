@@ -13,7 +13,10 @@ final case class Market(
   volume: Option[Volume],
   tokens: List[Token],
   createdAt: Instant,
-  closedTime: Option[Instant]
+  closedTime: Option[Instant],
+  events: Option[List[Event]],
+  startDate: Option[Instant],
+  endDate: Option[Instant]
 )
 
 object Market {
@@ -25,6 +28,9 @@ object Market {
         conditionId   <- c.downField("conditionId").as[String]
         createdAt     <- c.downField("createdAt").as[Instant]
         closedTimeStr <- c.downField("closedTime").as[Option[String]]
+        startDate     <- c.downField("startDate").as[Option[Instant]]
+        endDate       <- c.downField("endDate").as[Option[Instant]]
+        events        <- c.downField("events").as[Option[List[Event]]]
         closedTime = closedTimeStr.flatMap(str =>
           Try(Instant.parse(str.replace(" ", "T").replace("+00", "Z"))).toOption
         )
@@ -52,6 +58,6 @@ object Market {
           .map {
             case ((outcome, tokenId), price) => Token(outcome, tokenId, price)
           }
-      } yield Market(id, question, conditionId, volume, tokens, createdAt, closedTime)
+      } yield Market(id, question, conditionId, volume, tokens, createdAt, closedTime, events, startDate, endDate)
     }
 }

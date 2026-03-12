@@ -14,18 +14,33 @@ import java.time.{Instant, ZonedDateTime}
 class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Events[F] {
 
   private def createQuery(events: List[Event]): ConnectionIO[Int] = {
-    val insert = fr"INSERT INTO events (id, volume, title, created_at, closed_time, tags) VALUES"
+    val insert =
+      fr"""INSERT INTO events (
+        |id,
+        |volume,
+        |title,
+        |created_at,
+        |closed_time,
+        |tags,
+        |startDate,
+        |endDate,
+        |slug,
+        |closed) VALUES"""
     val values = events
       .map(event => fr"""
-                        |(
-                        |${event.id},
-                        |${event.volume},
-                        |${event.title},
-                        |${event.createdAt},
-                        |${event.closedTime},
-                        |splitByChar(',', ${event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")})
-                        |)
-                        |""".stripMargin)
+          |(
+          |${event.id},
+          |${event.volume},
+          |${event.title},
+          |${event.createdAt},
+          |${event.closedTime},
+          |splitByChar(',', ${event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")}),
+          |${event.startDate},
+          |${event.endDate},
+          |${event.slug},
+          |${event.closed}
+          |)
+        """.stripMargin)
       .reduce(_ ++ _)
 
     (insert ++ values).update.run
