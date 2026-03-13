@@ -8,5 +8,5 @@ trait EventsClient[F[_]] {
   def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]]
   def getEventsByMaxEndDate(maxEndDate: Instant, limit: Int, offset: Int): F[List[Event]]
   def getLastClosedEvents(limit: Int, offset: Int = 0): F[List[Event]]
-  def getEventByToken(token: String): F[Option[Event]]
+  def getEventsByTokens(tokens: List[String]): F[List[Event]]
 }

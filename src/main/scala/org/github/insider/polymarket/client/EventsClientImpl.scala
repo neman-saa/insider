@@ -18,10 +18,14 @@ private class EventsClientImpl[F[_]: Async](
   logger: Logger[F],
 ) extends EventsClient[F] {
 
-  override def getEventByToken(token: String): F[Option[Event]] =
-    getMarkets(baseUriMarket(1, 0).withQueryParam("clob_token_ids", List(token))).map {
-      case List(market) => market.events.flatMap(_.headOption.map(_.copy(markets = Some(List(market)))))
+  override def getEventsByTokens(tokens: List[String]): F[List[Event]] = {
+    val uri = tokens.foldLeft(baseUriMarket(1, 0)) {
+      case (uri, tokenId) => uri.withQueryParam("clob_token_ids", tokenId)
     }
+    getMarkets(uri).map { markets =>
+      markets.flatMap(market => market.events.getOrElse(Nil).headOption.map(_.copy(markets = Some(List(market)))))
+    }
+  }
 
   override def getEventsByMaxEndDate(maxEndDate: Instant, limit: Int, offset: Int): F[List[Event]] = getEvents(
     baseUri(limit, offset).withQueryParam("end_date_max", maxEndDate.toString)

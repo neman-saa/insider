@@ -40,20 +40,24 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
-        notifications <- trades.traverse { trade =>
-          for {
-            leaderboardEntries <- leaderboards.find(HexAddress(trade.makerAddress))
-            event              <- eventsCached.find(trade.tokenId)
-          } yield TradeNotification(trade, leaderboardEntries, event)
+        entries <- trades.traverse { trade =>
+          leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
         }
-        _ <- logger.info(s"Notification: ${notifications.take(10).map(_.event.slug)}")
-        filteredNotifications = notifications.filter { notification =>
-          notification.leaderboardEntries.nonEmpty && notification.trade.singleTokenPrice < BigDecimal(0.9)
+
+        filteredEntries = entries.filter {
+          case (trade, entries) =>
+            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.9)
+        }
+
+        events  <- eventsCached.find(filteredEntries.map(_._1.tokenId))
+
+        notifications = filteredEntries.map {
+          case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
         }
 
         _ <- fs2
           .Stream
-          .emits(filteredNotifications)
+          .emits(notifications)
           .evalMap(topic.publish1)
           .compile
           .drain

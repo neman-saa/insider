@@ -14,8 +14,17 @@ import scala.concurrent.duration.DurationInt
 
 class EventsCached[F[_]: Async](cache: Cache[F, String, Event], eventsClient: EventsClient[F]) {
 
-  def load(tokenId: String): F[Event] = eventsClient.getEventByToken(tokenId).map(_.get)
-  def find(tokenId: String): F[Event] = cache.getOrUpdate(tokenId)(load(tokenId))
+  def find(tokenIds: List[String]): F[Map[String, Event]] = for {
+    contained <- tokenIds.traverse(tokenId => cache.contains(tokenId).map((tokenId, _)))
+    needToLoad = contained.collect { case (tokenId, false) => tokenId }
+    events    <- eventsClient.getEventsByTokens(needToLoad)
+    map = needToLoad
+      .map(tokenId => tokenId -> events.find(_.markets.get.head.tokens.flatMap(_.id).contains(tokenId)).get)
+      .toMap
+    res <- tokenIds.traverse { tokenId =>
+      cache.getOrUpdate(tokenId)(map(tokenId).pure[F]).map(tokenId -> _)
+    }
+  } yield res.toMap
 }
 
 object EventsCached {
