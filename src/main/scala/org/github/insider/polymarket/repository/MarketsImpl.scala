@@ -14,7 +14,19 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
 
   override def insert(markets: List[(String, Market)]): F[Int] = {
     val marketsConnection =
-      Update[(String, String, String, OffsetDateTime, Option[OffsetDateTime], String, Option[Volume])](
+      Update[
+        (
+          String,
+          String,
+          String,
+          OffsetDateTime,
+          Option[OffsetDateTime],
+          String,
+          Option[Volume],
+          Option[OffsetDateTime],
+          Option[OffsetDateTime]
+        )
+      ](
         """
         |INSERT INTO markets(
         | id,
@@ -23,9 +35,11 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
         | created_at,
         | closed_time,
         | event_id,
-        | volume
+        | volume,
+        | startDate,
+        | endDate
         |)
-        |VALUES (?, ?, ?, ?, ?, ?, ?)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin
       ).updateMany(markets.map { t =>
         val tuple =
@@ -36,7 +50,9 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
             t._2.createdAt.atOffset(ZoneOffset.UTC),
             t._2.closedTime.map(_.atOffset(ZoneOffset.UTC)),
             t._1,
-            t._2.volume
+            t._2.volume,
+            t._2.startDate.map(_.atOffset(ZoneOffset.UTC)),
+            t._2.endDate.map(_.atOffset(ZoneOffset.UTC))
           )
         tuple
       })

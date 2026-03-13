@@ -19,7 +19,7 @@ import org.github.insider.leaderboard.{
 }
 import org.github.insider.notifications.services.TelegramNotificator
 import org.github.insider.persistance.Database
-import org.github.insider.polymarket.EventsRealtimeFlow
+import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.domain.Trade
@@ -66,7 +66,7 @@ object Main extends IOApp.Simple {
           300
         )(5)
         .toResource
-
+      eventsCached <- EventsCached.of[IO](eventClient)
       leaderboards <- Leaderboards.make[IO](
         strategies = List[LeaderboardStrategy[IO]](
           // TotalProfitLeaderboardCH[IO](transactor),
@@ -83,6 +83,7 @@ object Main extends IOApp.Simple {
           config.alchemy,
           tradeNotifications,
           leaderboards,
+          eventsCached
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource

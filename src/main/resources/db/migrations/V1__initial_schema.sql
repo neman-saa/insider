@@ -5,8 +5,13 @@ CREATE TABLE IF NOT EXISTS events
     title Nullable(String),
     created_at Nullable(DateTime64(6)),
     closed_time Nullable(DateTime64(6)),
-    tags Array(Nullable(String))
+    tags Array(Nullable(String)),
+    startDate Nullable(DateTime64(6)),
+    endDate Nullable(DateTime64(6)),
+    slug Nullable(String),
+    closed Nullable(Bool)
 )
+
 ENGINE = MergeTree()
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
@@ -19,7 +24,9 @@ CREATE TABLE IF NOT EXISTS markets
     created_at Nullable(DateTime64(6)),
     closed_time Nullable(DateTime64(6)),
     event_id Nullable(String),
-    volume Nullable(Decimal(38, 9))
+    volume Nullable(Decimal(38, 9)),
+    startDate Nullable(DateTime64(6)),
+    endDate Nullable(DateTime64(6))
 )
 ENGINE = MergeTree()
 ORDER BY id

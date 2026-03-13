@@ -15,6 +15,7 @@ import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.Trade
 import org.github.insider.leaderboard.TradeNotification
+import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -28,6 +29,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   alchemyConfig: AlchemyConfig,
   topic: Topic[F, TradeNotification],
   leaderboards: Leaderboards[F],
+  eventsCached: EventsCached[F]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -38,19 +40,24 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
-        notifications <- trades.traverse { trade =>
-          leaderboards.find(HexAddress(trade.makerAddress)).map { leaderboardEntries =>
-            TradeNotification(trade, leaderboardEntries)
-          }
+        entries <- trades.traverse { trade =>
+          leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
         }
 
-        filteredNotifications = notifications.filter { notification =>
-          notification.leaderboardEntries.nonEmpty && notification.trade.singleTokenPrice < BigDecimal(0.9)
+        filteredEntries = entries.filter {
+          case (trade, entries) =>
+            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.9)
+        }
+
+        events  <- eventsCached.find(filteredEntries.map(_._1.tokenId))
+
+        notifications = filteredEntries.map {
+          case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
         }
 
         _ <- fs2
           .Stream
-          .emits(filteredNotifications)
+          .emits(notifications)
           .evalMap(topic.publish1)
           .compile
           .drain
@@ -122,6 +129,7 @@ object TradesRealtimeFlow {
     alchemyConfig: AlchemyConfig,
     topic: Topic[F, TradeNotification],
     leaderboards: Leaderboards[F],
+    eventsCached: EventsCached[F]
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -133,7 +141,8 @@ object TradesRealtimeFlow {
           aggregatedRepository,
           alchemyConfig,
           topic,
-          leaderboards
+          leaderboards,
+          eventsCached
         )(logger)
       )
 }
