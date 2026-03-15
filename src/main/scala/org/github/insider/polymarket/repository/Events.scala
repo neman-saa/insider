@@ -8,5 +8,4 @@ trait Events[F[_]] {
 
   def insert(events: List[Event]): F[Int]
   def getLatestClosedDate: F[Instant]
-
 }

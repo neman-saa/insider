@@ -25,6 +25,9 @@ class Leaderboards[F[_]: Async](
           }
       }
       .map(_.flatten)
+
+  def getLeaderboard(leaderboardKeyName: LeaderboardKeyName): F[Option[Map[HexAddress, LeaderboardEntry]]] =
+    cache.get(leaderboardKeyName)
 }
 
 object Leaderboards {

@@ -62,6 +62,8 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
       .map(Instant.from(_))
       .unique
       .transact(transactor)
+
+
 }
 
 object EventsImpl {

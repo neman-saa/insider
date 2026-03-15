@@ -72,6 +72,28 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
       _ <- outcomeTokensConnection
     } yield n).transact(transactor)
   }
+
+  override def getMarketByTokenId(tokenId: String): F[Option[Market]] =
+    sql"""
+       SELECT
+          m.id,
+          any(m.question) AS question,
+          any(m.condition_id) AS condition_id,
+          any(m.volume) AS volume,
+          groupArray(t.id) AS token_ids,
+          any(m.created_at) AS created_at,
+          any(m.closed_time) AS closed_time,
+          any(m.startDate) AS start_date,
+          any(m.endDate) AS end_date
+       FROM markets m
+       JOIN tokens t ON t.market_id = m.id
+       WHERE m.id IN (
+           SELECT market_id
+           FROM tokens
+           WHERE id = $tokenId
+       )
+       GROUP BY m.id
+     """.query[Market].option.transact(transactor)
 }
 
 object MarketsImpl {

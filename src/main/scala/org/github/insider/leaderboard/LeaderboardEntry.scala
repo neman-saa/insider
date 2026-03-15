@@ -7,4 +7,6 @@ trait LeaderboardEntry {
   def rank: Int
 
   def prettyPrint: String
+
+  def score: BigDecimal
 }

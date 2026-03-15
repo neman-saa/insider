@@ -49,7 +49,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
             entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.9)
         }
 
-        events  <- eventsCached.find(filteredEntries.map(_._1.tokenId))
+        events <- eventsCached.find(filteredEntries.map(_._1.tokenId))
 
         notifications = filteredEntries.map {
           case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
