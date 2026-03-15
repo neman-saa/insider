@@ -5,10 +5,11 @@ import cats.syntax.all._
 import doobie.{Transactor, Update}
 import doobie.implicits._
 import doobie.postgres.implicits._
-import org.github.insider.polymarket.domain.{Market, Volume}
+import org.github.insider.polymarket.domain.{Market, Side, Token, Volume}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-import java.time.{OffsetDateTime, ZoneOffset}
+
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
 class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Markets[F] {
 
@@ -80,7 +81,7 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
           any(m.question) AS question,
           any(m.condition_id) AS condition_id,
           any(m.volume) AS volume,
-          groupArray(t.id) AS token_ids,
+          groupArray(tuple(t.outcome, t.id, t.last_price) AS token_ids,
           any(m.created_at) AS created_at,
           any(m.closed_time) AS closed_time,
           any(m.startDate) AS start_date,
@@ -93,7 +94,39 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
            WHERE id = $tokenId
        )
        GROUP BY m.id
-     """.query[Market].option.transact(transactor)
+     """
+      .query[
+        (
+          String,
+          String,
+          String,
+          Option[BigDecimal],
+          List[(Option[String], Option[String], Option[BigDecimal])],
+          Instant,
+          Option[Instant],
+          Option[Instant],
+          Option[Instant]
+        )
+      ]
+      .option
+      .transact(transactor)
+      .map(
+        _.map {
+          case (id, question, conditionId, volume, tokenTuples, createdAt, closedTime, startDate, endDate) =>
+            Market(
+              id,
+              question,
+              conditionId,
+              volume.map(Volume.apply),
+              tokenTuples.map { case (tid, tside, tlprice) => Token(tid, tside, tlprice.map(Volume.apply)) },
+              createdAt,
+              closedTime,
+              None,
+              startDate,
+              endDate
+            )
+        }
+      )
 }
 
 object MarketsImpl {
