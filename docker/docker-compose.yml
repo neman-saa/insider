@@ -21,12 +21,6 @@ services:
           memory: 24G
         reservations:
           memory: 16G
-    networks:
-      - migration_net
-
-networks:
-  migration_net:
-    driver: bridge
 
 volumes:
   docker_clickhouse_data:
