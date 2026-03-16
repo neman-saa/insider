@@ -60,9 +60,9 @@ object TelegramNotificator {
        |Single token price: ${notification.trade.singleTokenPrice}
        |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("???")}
        |Token ID: ${notification.trade.tokenId}
-       |Event link: ${notification.event.slug.map(slug => s"polymarket.com/event/$slug").getOrElse("")}
+       |Event link: ${notification.event.slug.map(slug => s"https://polymarket.com/event/$slug").getOrElse("")}
        |Event slug: ${notification.event.slug.getOrElse("")}
-       |Market question: ${notification.event.markets.get.head}
+       |Market question: ${notification.event.markets.flatMap(_.headOption.map(_.question)).getOrElse("???")}
        |$leaderboard
        |""".stripMargin
   }

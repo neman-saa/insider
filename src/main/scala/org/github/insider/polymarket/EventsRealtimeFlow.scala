@@ -1,5 +1,6 @@
 package org.github.insider.polymarket
 
+import cats.data.NonEmptyList
 import cats.effect.{Async, Ref}
 import cats.syntax.all._
 import org.github.insider.polymarket.client.EventsClient
@@ -23,8 +24,14 @@ class EventsRealtimeFlow[F[_]: Async](
       for {
         lastClosedTimeR <- lastClosedTime.get
         events          <- getAllEventsAfterDate(lastClosedTimeR, 100)
-        _               <- eventsImpl.insert(events)
-        _ <- marketsImpl.insert(events.flatMap(event => event.markets.getOrElse(Nil).map(market => (event.id, market))))
+        markets          = events.flatMap(event => event.markets.getOrElse(Nil).map(market => (event.id, market)))
+
+        maybeEventsNel  = NonEmptyList.fromList(events)
+        maybeMarketsNel = NonEmptyList.fromList(markets)
+
+        _ <- maybeEventsNel.fold(0.pure[F])(eventsImpl.insert)
+        _ <- maybeMarketsNel.fold(0.pure[F])(marketsImpl.insert)
+
         _ <- lastClosedTime.set(events.map(_.closedTime.get).maxBy(_.getEpochSecond))
         _ <- Async[F].sleep(3.hour)
       } yield ()

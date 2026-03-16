@@ -18,30 +18,6 @@ private class EventsClientImpl[F[_]: Async](
   logger: Logger[F],
 ) extends EventsClient[F] {
 
-  override def getEventsByTokens(tokens: List[String]): F[List[Event]] = {
-    val uri = tokens.foldLeft(baseUriMarket(1, 0)) {
-      case (uri, tokenId) => uri.withQueryParam("clob_token_ids", tokenId)
-    }
-    getMarkets(uri).map { markets =>
-      markets.flatMap(market => market.events.getOrElse(Nil).headOption.map(_.copy(markets = Some(List(market)))))
-    }
-  }
-
-  override def getEventsByMaxEndDate(maxEndDate: Instant, limit: Int, offset: Int): F[List[Event]] = getEvents(
-    baseUri(limit, offset).withQueryParam("end_date_max", maxEndDate.toString)
-  )
-
-  override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] =
-    getEvents(baseUri(limit, offset).withQueryParam("tag_id", tag.id))
-
-  override def getLastClosedEvents(limit: Int, offset: Int = 0): F[List[Event]] =
-    getEvents(
-      baseUri(limit, offset)
-        .withQueryParam("ascending", "false")
-        .withQueryParam("order", "closedTime")
-        .withQueryParam("closed", "true")
-    )
-
   private def baseUri(limit: Int, offset: Int): Uri =
     GammaApiHost
       .addSegment("events")
@@ -55,6 +31,39 @@ private class EventsClientImpl[F[_]: Async](
       .withQueryParam("limit", limit)
       .withQueryParam("offset", offset)
       .withQueryParam("order", "createdAt")
+
+  override def getEventsByTokens(tokens: List[String]): F[List[Event]] = {
+    val uri = tokens.foldLeft(baseUriMarket(1, 0)) {
+      case (uri, tokenId) => uri.withQueryParam("clob_token_ids", tokenId)
+    }
+    getMarkets(uri).map { markets =>
+      markets.flatMap(market => market.events.getOrElse(Nil).headOption.map(_.copy(markets = Some(List(market)))))
+    }
+  }
+
+  override def getClosedEventsSortedByClosedTime(limit: Int, offset: Int): F[List[Event]] = {
+    val uri =
+      GammaApiHost
+        .addSegment("events")
+        .withQueryParam("limit", limit)
+        .withQueryParam("offset", offset)
+        .withQueryParam("closed", "true")
+        .withQueryParam("order", "closedTime")
+        .withQueryParam("ascending", "true")
+
+    getEvents(uri)
+  }
+
+  override def getEventsByTag(tag: Tag, limit: Int, offset: Int): F[List[Event]] =
+    getEvents(baseUri(limit, offset).withQueryParam("tag_id", tag.id))
+
+  override def getLastClosedEvents(limit: Int, offset: Int = 0): F[List[Event]] =
+    getEvents(
+      baseUri(limit, offset)
+        .withQueryParam("ascending", "false")
+        .withQueryParam("order", "closedTime")
+        .withQueryParam("closed", "true")
+    )
 
   private def getEvents(uri: Uri): F[List[Event]] = {
     client.get[List[Event]](uri) {

@@ -36,7 +36,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 100
+        toBlock               = latestProcessedBlock + 50
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
@@ -46,7 +46,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 
         filteredEntries = entries.filter {
           case (trade, entries) =>
-            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.9)
+            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.7)
         }
 
         events  <- eventsCached.find(filteredEntries.map(_._1.tokenId))

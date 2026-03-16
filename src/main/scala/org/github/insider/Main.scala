@@ -2,6 +2,7 @@ package org.github.insider
 
 import canoe.api.TelegramClient
 import cats.effect.{IO, IOApp, Ref}
+import cats.implicits.catsSyntaxTuple2Parallel
 import fs2.concurrent.Topic
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
@@ -55,7 +56,9 @@ object Main extends IOApp.Simple {
       implicit0(client: TelegramClient[IO]) <- TelegramClient[IO](config.telegram.token)
       _                                     <- TelegramNotificator.create[IO](tradeNotifications).start.toResource
 
-      eventsWorker <- EventsExtractorWorkerGroup.of[IO](eventClient, marketsImpl, eventsImpl)(5).toResource
+      eventsWorker <- EventsExtractorWorkerGroup
+        .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
+        .toResource
       tradesWorker <- TradeWorkerGroup
         .of[IO](
           transfersClient,
@@ -63,8 +66,8 @@ object Main extends IOApp.Simple {
           tradesRepository,
           aggregatedTradesRepository,
           config.alchemy.ctfAddress,
-          300
-        )(5)
+          step = 300
+        )(nWorkers = 5)
         .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
       leaderboards <- Leaderboards.make[IO](
@@ -95,14 +98,10 @@ object Main extends IOApp.Simple {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
 
-          // _ <- eventsWorker.getCollectedEvents(Instant.now(), 300, 450000)
-          // - <- tradesWorker.run(83_929_800, 83_934_200)
+          // _ <- eventsWorker.extractAllClosedEvents
+          // _ <- tradesWorker.run(83_934_808, 84_295_753)
 
-          realtimeTradesFiber <- realtimeTrades.runForever.start
-          // realtimeEventsFiber <- realtimeEvents.runForever.start
-
-          _ <- realtimeTradesFiber.join
-          // _ <- realtimeEventsFiber.join
+          _ <- (realtimeTrades.runForever, realtimeEvents.runForever).parTupled
         } yield ()
     }
   }

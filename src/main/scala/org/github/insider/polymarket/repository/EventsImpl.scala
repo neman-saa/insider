@@ -1,5 +1,6 @@
 package org.github.insider.polymarket.repository
 
+import cats.data.NonEmptyList
 import cats.effect.kernel.Async
 import cats.syntax.all._
 import doobie.implicits.javatimedrivernative._
@@ -15,30 +16,34 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
 
   private def createQuery(events: List[Event]): ConnectionIO[Int] = {
     val insert =
-      fr"""INSERT INTO events (
-        |id,
-        |volume,
-        |title,
-        |created_at,
-        |closed_time,
-        |tags,
-        |startDate,
-        |endDate,
-        |slug,
-        |closed) VALUES"""
+      fr"""
+        |INSERT INTO events (
+        |   id,
+        |   volume,
+        |   title,
+        |   created_at,
+        |   closed_time,
+        |   tags,
+        |   startDate,
+        |   endDate,
+        |   slug,
+        |   closed
+        |) VALUES
+        |""".stripMargin
+
     val values = events
       .map(event => fr"""
           |(
-          |${event.id},
-          |${event.volume},
-          |${event.title},
-          |${event.createdAt},
-          |${event.closedTime},
-          |splitByChar(',', ${event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")}),
-          |${event.startDate},
-          |${event.endDate},
-          |${event.slug},
-          |${event.closed}
+          |   ${event.id},
+          |   ${event.volume},
+          |   ${event.title},
+          |   ${event.createdAt},
+          |   ${event.closedTime},
+          |   splitByChar(',', ${event.tags.getOrElse(Nil).flatMap(_.label).mkString(",")}),
+          |   ${event.startDate},
+          |   ${event.endDate},
+          |   ${event.slug},
+          |   ${event.closed}
           |)
         """.stripMargin)
       .reduce(_ ++ _)
@@ -46,11 +51,11 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
     (insert ++ values).update.run
   }
 
-  override def insert(events: List[Event]): F[Int] =
-    createQuery(events)
+  override def insert(events: NonEmptyList[Event]): F[Int] =
+    createQuery(events.toList)
       .transact(transactor)
       .flatTap(n =>
-        logger.info(s"Inserted $n events") >> logger.info(s"Inserted ${events.flatMap(_.markets).length} markets")
+        logger.info(s"Inserted $n events") >> logger.info(s"Inserted ${events.toList.flatMap(_.markets).length} markets")
       )
 
   override def getLatestClosedDate: F[Instant] =

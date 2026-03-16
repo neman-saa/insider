@@ -6,35 +6,28 @@ import cats.syntax.all._
 import org.github.insider.polymarket.client.EventsClient
 import org.github.insider.polymarket.domain.Event
 import org.github.insider.polymarket.repository.{Events, Markets}
+import org.typelevel.log4cats.Logger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import java.time.Instant
 
 private[workers] class EventsExtractorWorkerGroup[F[_]: Async: Parallel](
   eventsClient: EventsClient[F],
-  collectedEvents: Ref[F, List[Event]],
   workersNumber: Int,
   marketsImpl: Markets[F],
-  eventsImpl: Events[F]
-) {
-
-  def getCollectedEvents(maxEndDate: Instant, limit: Int, maxDepth: Int): F[Unit] =
-    awaitedRunGroupOfN(maxEndDate, limit, maxDepth) >>
-      (for {
-        events <- collectedEvents.get
-        markets = events.flatMap(event => event.markets.getOrElse(Nil).map(market => (event.id, market)))
-        _      <- eventsImpl.insert(events)
-        _      <- marketsImpl.insert(markets)
-      } yield ())
-
-  private def awaitedRunGroupOfN(maxEndDate: Instant, limit: Int, maxDepth: Int): F[Unit] = {
+  eventsImpl: Events[F],
+  limit: Int,
+)(logger: Logger[F]) {
+  def extractAllClosedEvents: F[Unit] = {
     for {
+      _      <- logger.info(s"Starting events extraction")
       offset <- Ref.of[F, Int](0)
       workers <-
         (1 to workersNumber)
-          .map(n => EventsExtractorWorker.of[F](eventsClient, offset, collectedEvents, n))
+          .map(n => EventsExtractorWorker.of[F](offset, eventsClient, marketsImpl, eventsImpl, limit, n))
           .toList
           .sequence
-      _ <- workers.parTraverse_(_.run(maxEndDate, limit, maxDepth))
+      _ <- workers.parTraverse_(_.run)
     } yield ()
   }
 }
@@ -43,9 +36,12 @@ object EventsExtractorWorkerGroup {
   def of[F[_]: Async: Parallel](
     eventsClient: EventsClient[F],
     marketsImpl: Markets[F],
-    eventsImpl: Events[F]
-  )(workersNumber: Int = 1): F[EventsExtractorWorkerGroup[F]] =
-    for {
-      collectedEvents <- Ref.of[F, List[Event]](List.empty)
-    } yield new EventsExtractorWorkerGroup[F](eventsClient, collectedEvents, workersNumber, marketsImpl, eventsImpl)
+    eventsImpl: Events[F],
+    limit: Int,
+  )(workersNumber: Int): F[EventsExtractorWorkerGroup[F]] =
+    Slf4jLogger
+      .create[F]
+      .map(logger =>
+        new EventsExtractorWorkerGroup[F](eventsClient, workersNumber, marketsImpl, eventsImpl, limit)(logger)
+      )
 }
