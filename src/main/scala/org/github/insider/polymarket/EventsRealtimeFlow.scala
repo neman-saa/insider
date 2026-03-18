@@ -32,7 +32,10 @@ class EventsRealtimeFlow[F[_]: Async](
         _ <- maybeEventsNel.fold(0.pure[F])(eventsImpl.insert)
         _ <- maybeMarketsNel.fold(0.pure[F])(marketsImpl.insert)
 
-        _ <- lastClosedTime.set(events.map(_.closedTime.get).maxBy(_.getEpochSecond))
+        _ <- events match {
+          case Nil => ().pure[F]
+          case evs => lastClosedTime.set(evs.map(_.closedTime.get).maxBy(_.getEpochSecond))
+        }
         _ <- Async[F].sleep(3.hour)
       } yield ()
 

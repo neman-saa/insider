@@ -55,7 +55,9 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
     createQuery(events.toList)
       .transact(transactor)
       .flatTap(n =>
-        logger.info(s"Inserted $n events") >> logger.info(s"Inserted ${events.toList.flatMap(_.markets).length} markets")
+        logger.info(s"Inserted $n events") >> logger.info(
+          s"Inserted ${events.toList.flatMap(_.markets).length} markets"
+        )
       )
 
   override def getLatestClosedDate: F[Instant] =

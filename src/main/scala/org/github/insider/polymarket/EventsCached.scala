@@ -8,11 +8,12 @@ import cats.syntax.all._
 import com.evolution.scache.{Cache, ExpiringCache}
 import org.github.insider.polymarket.client.EventsClient
 import org.github.insider.polymarket.domain.Event
+import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import scala.concurrent.duration.DurationInt
 
-class EventsCached[F[_]: Async](cache: Cache[F, String, Event], eventsClient: EventsClient[F]) {
+class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, String, Event], eventsClient: EventsClient[F]) {
 
   def find(tokenIds: List[String]): F[Map[String, Event]] = for {
     contained <- tokenIds.traverse(tokenId => cache.contains(tokenId).map((tokenId, _)))
@@ -37,5 +38,5 @@ object EventsCached {
         )
       )
       logger <- Slf4jLogger.create[F].toResource
-    } yield new EventsCached[F](cache, eventsClient)
+    } yield new EventsCached[F](logger, cache, eventsClient)
 }

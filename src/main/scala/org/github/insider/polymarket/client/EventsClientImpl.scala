@@ -33,9 +33,7 @@ private class EventsClientImpl[F[_]: Async](
       .withQueryParam("order", "createdAt")
 
   override def getEventsByTokens(tokens: List[String]): F[List[Event]] = {
-    val uri = tokens.foldLeft(baseUriMarket(1, 0)) {
-      case (uri, tokenId) => uri.withQueryParam("clob_token_ids", tokenId)
-    }
+    val uri = baseUriMarket(tokens.length, 0).withMultiValueQueryParams(Map("clob_token_ids" -> tokens))
     getMarkets(uri).map { markets =>
       markets.flatMap(market => market.events.getOrElse(Nil).headOption.map(_.copy(markets = Some(List(market)))))
     }

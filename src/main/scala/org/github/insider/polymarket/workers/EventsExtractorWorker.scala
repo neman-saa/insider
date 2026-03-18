@@ -37,7 +37,7 @@ private[workers] class EventsExtractorWorker[F[_]: Async](
 
       markets = events.flatMap(event => event.markets.getOrElse(Nil).map(market => (event.id, market)))
 
-      maybeEventsNel = NonEmptyList.fromList(events)
+      maybeEventsNel  = NonEmptyList.fromList(events)
       maybeMarketsNel = NonEmptyList.fromList(markets)
 
       _ <- maybeEventsNel.fold(0.pure[F])(eventsImpl.insert)
