@@ -37,6 +37,7 @@ class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logge
       .query[Trade]
       .to[List]
       .transact(transactor)
+
 }
 
 object TradesRepositoryImpl {

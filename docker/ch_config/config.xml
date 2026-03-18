@@ -5,4 +5,16 @@
 
     <max_connections>200</max_connections>
     <max_concurrent_queries>50</max_concurrent_queries>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
 </clickhouse>

@@ -25,7 +25,7 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
         |startDate,
         |endDate,
         |slug,
-        |closed) VALUES"""
+        |closed) VALUES""".stripMargin
     val values = events
       .map(event => fr"""
           |(
