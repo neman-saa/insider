@@ -10,14 +10,7 @@ import org.github.insider.alchemy.domain.User
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.{
-  LeaderboardEntry,
-  LeaderboardStrategy,
-  Leaderboards,
-  TotalProfitLeaderboardCH,
-  TradeNotification,
-  WinRateLeaderboardStrategyCH
-}
+import org.github.insider.leaderboard.{LeaderboardEntry, LeaderboardStrategy, Leaderboards, RoiLeaderboardStrategyCH, TradeNotification}
 import org.github.insider.notifications.services.TelegramNotificator
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
@@ -73,7 +66,7 @@ object Main extends IOApp.Simple {
       leaderboards <- Leaderboards.make[IO](
         strategies = List[LeaderboardStrategy[IO]](
           // TotalProfitLeaderboardCH[IO](transactor),
-          WinRateLeaderboardStrategyCH[IO](transactor),
+          RoiLeaderboardStrategyCH[IO](transactor),
         )
       )
 

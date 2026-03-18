@@ -4,12 +4,13 @@ import cats.data.NonEmptyList
 import cats.effect.Async
 import cats.syntax.all._
 import doobie.{Transactor, Update}
-import org.github.insider.polymarket.domain.{Side, Trade}
+import org.github.insider.polymarket.domain.Trade
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import doobie.syntax.all._
-import org.github.insider.alchemy.domain.User
-import org.github.insider.alchemy.repository.codec._
+import doobie.postgres.implicits._
+
+import java.time.Instant
 
 class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends TradesRepository[F] {
 
@@ -32,6 +33,22 @@ class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logge
       .query[Long]
       .unique
       .transact(transactor)
+
+  override def getHistoricalTrades(limit: Long, offset: Int): F[List[Trade]] =
+    sql"select * from trades order by (block_num, tx_index) limit $limit offset $offset"
+      .query[Trade]
+      .to[List]
+      .transact(transactor)
+
+  override def getEarliestTradeTimestamp: F[Instant] =
+    fr"""
+        |SELECT min(block_timestamp) FROM trades
+        |"""
+      .stripMargin
+      .query[Instant]
+      .unique
+      .transact(transactor)
+
 }
 
 object TradesRepositoryImpl {
