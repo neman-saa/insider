@@ -7,5 +7,5 @@ import java.time.Instant
 trait Markets[F[_]] {
 
   def insert(markets: List[(String, Market)]): F[Int]
-  def getMarketClosedTimeByTokenId(tokenId: String): F[Option[Instant]]
+  def getMarketClosedTimeWithLastPriceByTokenId(tokenId: String): F[(Instant, Int)]
 }

@@ -4,10 +4,11 @@ import cats.effect.Sync
 import doobie.Transactor
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import doobie.implicits._
+import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.RoiLeaderboardStrategyCH.RoiLeaderboardEntry
 
-import java.time.Instant
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
 private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
 
@@ -75,11 +76,12 @@ private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) ex
         |    FROM agg_trades
         |    FINAL
         |    JOIN tokens ON tokens.id = token_id
-        |    JOIN markets ON tokens.market_id = markets.id AND markets.start_date < $date
+        |    JOIN markets ON tokens.market_id = markets.id AND markets.start_date < ${date.atOffset(ZoneOffset.UTC)}
+
         |    WHERE last_price = 0 OR last_price = 1
         |)
         |GROUP BY maker_address
-        |HAVING sum(new_money) > 1000 AND max(market_start_date) > $date - INTERVAL 270 DAY
+        |HAVING sum(new_money) > 1000 AND max(market_start_date) > ${date.atOffset(ZoneOffset.UTC)} - INTERVAL 270 DAY
         |ORDER BY min(3, all_profit/all_new_money)*sqrt(markets_count) DESC limit 10000
       """
 }

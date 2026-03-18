@@ -74,15 +74,16 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
     } yield n).transact(transactor)
   }
 
-  override def getMarketClosedTimeByTokenId(tokenId: String): F[Option[Instant]] =
+  override def getMarketClosedTimeWithLastPriceByTokenId(tokenId: String): F[(Instant, Int)] =
     sql"""
        SELECT
-          markets.closed_time
+          markets.closed_time,
+          tokens.last_price
        FROM markets
        JOIN tokens ON tokens.market_id = markets.id where tokens.id = $tokenId
      """
-      .query[Instant]
-      .option
+      .query[(Instant, Int)]
+      .unique
       .transact(transactor)
 }
 

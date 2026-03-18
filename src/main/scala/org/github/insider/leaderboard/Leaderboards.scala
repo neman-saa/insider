@@ -8,6 +8,7 @@ import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
 class Leaderboards[F[_]: Async](
@@ -19,7 +20,7 @@ class Leaderboards[F[_]: Async](
     strategies
       .traverse { strategy =>
         cache
-          .getOrUpdate(strategy.key)(strategy.load.flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
+          .getOrUpdate(strategy.key)(strategy.load(Instant.now()).flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
           .map { leaderboardEntries =>
             leaderboardEntries.get(address).map(strategy.key -> _)
           }
