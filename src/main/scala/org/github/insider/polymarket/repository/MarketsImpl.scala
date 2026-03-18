@@ -1,5 +1,6 @@
 package org.github.insider.polymarket.repository
 
+import cats.data.NonEmptyList
 import cats.effect.kernel.Async
 import cats.syntax.all._
 import doobie.{Transactor, Update}
@@ -13,7 +14,7 @@ import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
 class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Markets[F] {
 
-  override def insert(markets: List[(String, Market)]): F[Int] = {
+  override def insert(markets: NonEmptyList[(String, Market)]): F[Int] = {
     val marketsConnection =
       Update[
         (
@@ -64,6 +65,7 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
          |VALUES (?, ?, ?, ?)
          |""".stripMargin).updateMany(
         markets
+          .toList
           .map(market => (market._2.id, market._2.tokens))
           .flatMap(t => t._2.map(token => (token.id, t._1, token.outcome, token.lastPrice)))
       )

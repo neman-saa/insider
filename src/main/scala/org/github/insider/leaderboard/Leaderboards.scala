@@ -20,7 +20,7 @@ class Leaderboards[F[_]: Async](
     strategies
       .traverse { strategy =>
         cache
-          .getOrUpdate(strategy.key)(strategy.load(Instant.now()).flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
+          .getOrUpdate(strategy.key)(strategy.load(Instant.now(), 1000).flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
           .map { leaderboardEntries =>
             leaderboardEntries.get(address).map(strategy.key -> _)
           }

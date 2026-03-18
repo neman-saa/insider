@@ -48,7 +48,7 @@ class Simulator[F[_]: Async](
     ): F[BigDecimal] =
       if (isLeaderboardExpired(currentDate, lbLastUpdate))
         for {
-          board <- leaderboard.load(currentDate)
+          board <- leaderboard.load(currentDate, 1000)
           _     <- leaderboardRef.set(board)
           res   <- recursion(currentBalance, currentDate, tokens, offset, currentDate, leaderboardRef)
         } yield res
@@ -119,7 +119,7 @@ class Simulator[F[_]: Async](
 
     for {
       earliestTime       <- trades.getEarliestTradeTimestamp
-      initialLeaderboard <- leaderboard.load(earliestTime)
+      initialLeaderboard <- leaderboard.load(earliestTime, 1000)
       leaderboardRef     <- Ref.of[F, Map[HexAddress, LeaderboardEntry]](initialLeaderboard)
       res <- recursion(
         initialBalance,
