@@ -11,8 +11,8 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Win Rate Leaderboard")
 
-  override def load: F[Map[HexAddress, LeaderboardEntry]] =
-    query
+  override def load(limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+    query(limit)
       .query[(String, Int, Int)]
       .to[List]
       .map(list =>
@@ -27,7 +27,7 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
       )
       .transact(transactor)
 
-  private def query: Fragment =
+  private def query(limit: Int): Fragment =
     fr"""
         |SELECT
         |	maker_address,
@@ -44,7 +44,7 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
         |GROUP BY maker_address
         |HAVING win_count / (win_count + lose_count) > 0.7
         |ORDER BY win_count DESC
-        |LIMIT 10000
+        |LIMIT $limit
         """.stripMargin // Starting range 83725101 - 83725200
 }
 

@@ -11,7 +11,7 @@ private class TotalProfitLeaderboardCH[F[_]: Sync](transactor: Transactor[F]) ex
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Total Profit Leaderboard")
 
-  override def load: F[Map[HexAddress, LeaderboardEntry]] =
+  override def load(limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
     query
       .query[(String, BigDecimal, BigDecimal)]
       .to[List]
