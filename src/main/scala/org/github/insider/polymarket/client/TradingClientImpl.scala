@@ -19,13 +19,13 @@ private class TradingClientImpl[F[_]: Async](
   logger: Logger[F],
 ) extends TradingClient[F] {
 
-  override def buy(tokenId: String, amount: BigDecimal, maxPrice: Option[BigDecimal]): F[Option[BuyOrderResult]] = {
+  override def buy(tokenId: String, money: BigDecimal, maxPrice: Option[BigDecimal]): F[Option[BuyOrderResult]] = {
 
     val request = Request[F](method = POST, uri = clobUri).withEntity(
       Json.obj(
         "token_id" -> Json.fromString(tokenId),
         "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-        "amount"   -> Json.fromBigDecimal(amount),
+        "amount"   -> Json.fromBigDecimal(money),
         "side"     -> Side.circeEncoder(Side.Buy)
       )
     )
@@ -49,13 +49,13 @@ private class TradingClientImpl[F[_]: Async](
     }
   }
 
-  override def sell(tokenId: String, amount: BigDecimal, minPrice: Option[BigDecimal]): F[Option[SellOrderResult]] = {
+  override def sell(tokenId: String, entity: BigDecimal, minPrice: Option[BigDecimal]): F[Option[SellOrderResult]] = {
 
     val request = Request[F](method = POST, uri = clobUri).withEntity(
       Json.obj(
         "token_id" -> Json.fromString(tokenId),
         "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-        "amount"   -> Json.fromBigDecimal(amount),
+        "amount"   -> Json.fromBigDecimal(entity),
         "side"     -> Side.circeEncoder(Side.Sell)
       )
     )
