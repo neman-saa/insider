@@ -36,7 +36,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 10
+        toBlock               = latestProcessedBlock + 1000
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
@@ -69,7 +69,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
         _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
-        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
+        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
         _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
