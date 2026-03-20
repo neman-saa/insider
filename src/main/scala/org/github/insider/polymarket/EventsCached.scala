@@ -18,7 +18,7 @@ class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, String, Event
   def find(tokenIds: List[String]): F[Map[String, Event]] = for {
     contained <- tokenIds.traverse(tokenId => cache.contains(tokenId).map((tokenId, _)))
     needToLoad = contained.collect { case (tokenId, false) => tokenId }
-    events    <- eventsClient.getEventsByTokens(needToLoad)
+    events    <- if (needToLoad.nonEmpty) eventsClient.getEventsByTokens(needToLoad) else List.empty[Event].pure[F]
     map = needToLoad
       .map(tokenId => tokenId -> events.find(_.markets.get.head.tokens.flatMap(_.id).contains(tokenId)).get)
       .toMap

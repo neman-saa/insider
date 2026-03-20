@@ -13,7 +13,7 @@ import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
-import org.github.insider.polymarket.domain.{Side, Trade}
+import org.github.insider.polymarket.domain.{Event, Side, Trade}
 import org.github.insider.leaderboard.TradeNotification
 import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
@@ -50,7 +50,9 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
             trade.totalPrice >= BigDecimal(100) && trade.side == Side.Buy
         }
 
-        events <- eventsCached.find(filteredEntries.map(_._1.tokenId) distinctBy (x => x))
+        tokens = filteredEntries.map(_._1.tokenId).distinct
+
+        events <- if (tokens.nonEmpty) eventsCached.find(tokens) else Map.empty[String, Event].pure[F]
 
         notifications = filteredEntries.map {
           case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
