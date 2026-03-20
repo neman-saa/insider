@@ -13,7 +13,7 @@ import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
-import org.github.insider.polymarket.domain.Trade
+import org.github.insider.polymarket.domain.{Side, Trade}
 import org.github.insider.leaderboard.TradeNotification
 import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
@@ -36,31 +36,32 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 400
+        toBlock               = latestProcessedBlock + 10
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
-//        entries <- trades.traverse { trade =>
-//          leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
-//        }
+        entries <- trades.traverse { trade =>
+          leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
+        }
 
-//        filteredEntries = entries.filter {
-//          case (trade, entries) =>
-//            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.7)
-//        }
+        filteredEntries = entries.filter {
+          case (trade, entries) =>
+            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.8) &&
+            trade.totalPrice >= BigDecimal(100) && trade.side == Side.Buy
+        }
 
-//        events <- eventsCached.find(filteredEntries.map(_._1.tokenId) distinctBy (x => x))
-//
-//        notifications = filteredEntries.map {
-//          case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
-//        }
+        events <- eventsCached.find(filteredEntries.map(_._1.tokenId) distinctBy (x => x))
 
-//        _ <- fs2
-//          .Stream
-//          .emits(notifications)
-//          .evalMap(topic.publish1)
-//          .compile
-//          .drain
+        notifications = filteredEntries.map {
+          case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
+        }
+
+        _ <- fs2
+          .Stream
+          .emits(notifications)
+          .evalMap(topic.publish1)
+          .compile
+          .drain
 
         nel = NonEmptyList.fromList(trades)
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
@@ -69,8 +70,8 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
-        // _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
-        // _ <- Async[F].sleep(3.seconds)
+        _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
+        _ <- Async[F].sleep(3.seconds)
       } yield trades
 
     for {
