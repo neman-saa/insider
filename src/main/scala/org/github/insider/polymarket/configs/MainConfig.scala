@@ -24,7 +24,7 @@ object MainConfig {
 
   final case class TelegramConfig(token: String)
 
-  case class PolymarketConfig(clobAddress: String)
+  case class PolymarketConfig(clobAddress: String, user: String)
 
   implicit val dbConfigReader: ConfigReader[DbConfig] = {
     implicit val PropertiesConfigReader: ConfigReader[Properties] =

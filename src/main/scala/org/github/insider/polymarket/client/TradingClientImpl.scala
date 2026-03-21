@@ -4,7 +4,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Json
 import org.github.insider.polymarket.configs.MainConfig.PolymarketConfig
-import org.github.insider.polymarket.domain.{BuyOrderResult, SellOrderResult, Side}
+import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side, Tag}
 import org.http4s.Method.POST
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.circe.CirceSensitiveDataEntityDecoder.circeEntityDecoder
@@ -16,6 +16,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 private class TradingClientImpl[F[_]: Async](
   client: Client[F],
   clobUri: Uri,
+  user: String,
   logger: Logger[F],
 ) extends TradingClient[F] {
 
@@ -103,6 +104,23 @@ private class TradingClientImpl[F[_]: Async](
         }
     }
   }
+
+  override def positions(): F[List[Position]] = {
+    val uri: Uri =
+      DataApiHost
+        .addSegment("positions")
+        .withQueryParam("user", user)
+
+    client.get[List[Position]](uri) {
+      case Status.Successful(response) => response.as[List[Position]]
+      case other =>
+        other.as[Json].flatMap { json =>
+          val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
+          logger.error(s"Unsuccessful response received while fetching positions: $error") >>
+            List[Position]().pure[F]
+        }
+    }
+  }
 }
 
 object TradingClientImpl {
@@ -110,6 +128,6 @@ object TradingClientImpl {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
     val clobUri           = Uri.unsafeFromString(config.clobAddress)
 
-    Slf4jLogger.create[F].map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, logger))
+    Slf4jLogger.create[F].map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.user, logger))
   }
 }
