@@ -33,7 +33,7 @@ private class TransfersClientImpl[F[_]: Async](
         .addSegment("v2")
         .addSegment(apiKey)
 
-    val requestBody = ApiRequest.getAssetTransfersRequest(
+    val requestBody: ApiRequest[ApiRequest.GetAssetTransfersPayload] = ApiRequest.getAssetTransfersRequest(
       fromBlock    = fromBlock,
       toBlock      = toBlock,
       fromAddress  = fromAddress,
