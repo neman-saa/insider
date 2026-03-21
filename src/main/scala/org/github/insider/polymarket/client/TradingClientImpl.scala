@@ -47,7 +47,7 @@ private class TradingClientImpl[F[_]: Async](
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
-          logger.error(s"Unsuccessful response received while make order: $error") >>
+          logger.error(s"Unsuccessful response received while make buy order: $error") >>
             none[BuyOrderResult].pure[F]
         }
     }
@@ -80,7 +80,7 @@ private class TradingClientImpl[F[_]: Async](
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
-          logger.error(s"Unsuccessful response received while make order: $error") >>
+          logger.error(s"Unsuccessful response received while make sell order: $error") >>
             none[SellOrderResult].pure[F]
         }
     }
@@ -99,7 +99,7 @@ private class TradingClientImpl[F[_]: Async](
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
-          logger.error(s"Unsuccessful response received while make order: $error") >>
+          logger.error(s"Unsuccessful response received while fetching balance: $error") >>
             none[BigDecimal].pure[F]
         }
     }
