@@ -13,7 +13,7 @@ import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
-import org.github.insider.polymarket.domain.Trade
+import org.github.insider.polymarket.domain.{Event, Side, Trade}
 import org.github.insider.leaderboard.TradeNotification
 import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
@@ -36,7 +36,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 50
+        toBlock               = latestProcessedBlock + 1000
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
@@ -46,10 +46,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 
         filteredEntries = entries.filter {
           case (trade, entries) =>
-            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.7)
+            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.8) &&
+            trade.totalPrice >= BigDecimal(100) && trade.side == Side.Buy
         }
 
-        events <- eventsCached.find(filteredEntries.map(_._1.tokenId) distinctBy (x => x))
+        tokens = filteredEntries.map(_._1.tokenId).distinct
+
+        events <- if (tokens.nonEmpty) eventsCached.find(tokens) else Map.empty[String, Event].pure[F]
 
         notifications = filteredEntries.map {
           case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
@@ -66,7 +69,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
         _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
 
-        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(toBlock)
+        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
         _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
