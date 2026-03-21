@@ -23,10 +23,13 @@ private class TradingClientImpl[F[_]: Async](
 
     val request = Request[F](method = POST, uri = clobUri).withEntity(
       Json.obj(
-        "token_id" -> Json.fromString(tokenId),
-        "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-        "amount"   -> Json.fromBigDecimal(money),
-        "side"     -> Side.circeEncoder(Side.Buy)
+        "command" -> Json.fromString("trade"),
+        "args" -> Json.obj(
+          "token_id" -> Json.fromString(tokenId),
+          "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+          "amount"   -> Json.fromBigDecimal(money),
+          "side"     -> Side.circeEncoder(Side.Buy)
+        )
       )
     )
 
@@ -53,10 +56,13 @@ private class TradingClientImpl[F[_]: Async](
 
     val request = Request[F](method = POST, uri = clobUri).withEntity(
       Json.obj(
-        "token_id" -> Json.fromString(tokenId),
-        "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-        "amount"   -> Json.fromBigDecimal(entity),
-        "side"     -> Side.circeEncoder(Side.Sell)
+        "command" -> Json.fromString("trade"),
+        "args" -> Json.obj(
+          "token_id" -> Json.fromString(tokenId),
+          "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+          "amount"   -> Json.fromBigDecimal(entity),
+          "side"     -> Side.circeEncoder(Side.Sell)
+        )
       )
     )
 
@@ -79,6 +85,24 @@ private class TradingClientImpl[F[_]: Async](
     }
   }
 
+  override def balance(): F[Option[BigDecimal]] = {
+
+    val request = Request[F](method = POST, uri = clobUri).withEntity(Json.obj("command" -> Json.fromString("balance")))
+
+    client.run(request).use {
+      case Status.Successful(response) =>
+        response
+          .as[Json]
+          .map(_.hcursor.downField("balance").as[BigDecimal].toOption)
+          .map(_.map(_ / 1e6))
+      case other =>
+        other.as[Json].flatMap { json =>
+          val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
+          logger.error(s"Unsuccessful response received while make order: $error") >>
+            none[BigDecimal].pure[F]
+        }
+    }
+  }
 }
 
 object TradingClientImpl {
