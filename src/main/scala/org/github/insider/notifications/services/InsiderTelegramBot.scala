@@ -19,6 +19,14 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
     }
 
   private def toMessage(notification: TradeNotification): String = {
+    val tokenOutcome: Option[String] =
+      for {
+        markets <- notification.event.markets
+        market  <- markets.headOption
+        token   <- market.tokens.find(_.id.contains(notification.trade.tokenId))
+        outcome <- token.outcome
+      } yield outcome
+
     val leaderboard =
       notification
         .leaderboardEntries
@@ -37,10 +45,11 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
        |Tokens amount: ${notification.trade.amount / 1_000_000}
        |Total price: ${notification.trade.totalPrice}
        |Single token price: ${notification.trade.singleTokenPrice}
-       |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("???")}
+       |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("Unknown")}
        |Token ID: ${notification.trade.tokenId}
-       |Event link: ${notification.event.slug.map(slug => s"https://polymarket.com/event/$slug").getOrElse("")}
-       |Market question: ${notification.event.markets.flatMap(_.headOption.map(_.question)).getOrElse("???")}
+       |Event link: ${notification.event.slug.map(slug => s"https://polymarket.com/event/$slug").getOrElse("Unknown")}
+       |Market question: ${notification.event.markets.flatMap(_.headOption.map(_.question)).getOrElse("Unknown")}
+       |Outcome: ${tokenOutcome.getOrElse("Unknown")}
        |$leaderboard
        |""".stripMargin
   }
