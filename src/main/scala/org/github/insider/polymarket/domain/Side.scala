@@ -17,7 +17,7 @@ object Side {
 
   implicit val circeEncoder: Encoder[Side] =
     Encoder[String].contramap {
-      case Side.Buy => "BUY"
+      case Side.Buy  => "BUY"
       case Side.Sell => "SELL"
     }
 

@@ -15,6 +15,7 @@ import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.{Event, Side, Trade}
 import org.github.insider.leaderboard.TradeNotification
+import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.EventsCached
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -27,7 +28,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
-  topic: Topic[F, TradeNotification],
+  tgBot: InsiderTelegramBot[F],
   leaderboards: Leaderboards[F],
   eventsCached: EventsCached[F]
 )(logger: Logger[F]) {
@@ -36,7 +37,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 1000
+        toBlock               = latestProcessedBlock + 100
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades               <- transfersProcessor.extractTradesFrom(transfers)
 
@@ -58,12 +59,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
           case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
         }
 
-        _ <- fs2
-          .Stream
-          .emits(notifications)
-          .evalMap(topic.publish1)
-          .compile
-          .drain
+        _ <- tgBot.sendNotifications(notifications)
 
         nel = NonEmptyList.fromList(trades)
         _  <- nel.fold(0.pure[F])(tradesRepository.insert)
@@ -72,7 +68,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
-        _ <- logger.info(s"Finished range $latestProcessedBlock - $nextLatestBlock, sleeping 3 seconds...")
+        _ <- logger.info(s"Finished range [${latestProcessedBlock + 1} - $nextLatestBlock], sleeping 3 seconds...")
         _ <- Async[F].sleep(3.seconds)
       } yield trades
 
@@ -114,11 +110,11 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     }
 
     for {
-      _             <- logger.info(s"Starting extraction for range $fromBlock - $toBlock")
+      _             <- logger.info(s"Starting extraction for range [$fromBlock - $toBlock]")
       transfersTo   <- rec(Nil, None, Some(alchemyConfig.ctfAddress), None)
       transfersFrom <- rec(Nil, None, None, Some(alchemyConfig.ctfAddress))
       transfers      = transfersTo.reverse ++ transfersFrom.reverse
-      _ <- logger.info(s"Finished extraction for range $fromBlock - $toBlock with ${transfers.size} transfers")
+      _ <- logger.info(s"Finished extraction for range [$fromBlock - $toBlock] with ${transfers.size} transfers")
     } yield transfers
   }
 }
@@ -130,7 +126,7 @@ object TradesRealtimeFlow {
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,
-    topic: Topic[F, TradeNotification],
+    tgBot: InsiderTelegramBot[F],
     leaderboards: Leaderboards[F],
     eventsCached: EventsCached[F]
   ): F[TradesRealtimeFlow[F]] =
@@ -143,7 +139,7 @@ object TradesRealtimeFlow {
           tradesRepository,
           aggregatedRepository,
           alchemyConfig,
-          topic,
+          tgBot,
           leaderboards,
           eventsCached
         )(logger)
