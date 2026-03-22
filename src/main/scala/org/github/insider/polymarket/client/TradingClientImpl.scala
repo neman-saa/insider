@@ -4,7 +4,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Json
 import org.github.insider.polymarket.configs.MainConfig.PolymarketConfig
-import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side, Tag}
+import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side}
 import org.http4s.Method.POST
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.circe.CirceSensitiveDataEntityDecoder.circeEntityDecoder
@@ -16,23 +16,26 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 private class TradingClientImpl[F[_]: Async](
   client: Client[F],
   clobUri: Uri,
+  barrier: String,
   user: String,
   logger: Logger[F],
 ) extends TradingClient[F] {
 
   override def buy(tokenId: String, money: BigDecimal, maxPrice: Option[BigDecimal]): F[Option[BuyOrderResult]] = {
 
-    val request = Request[F](method = POST, uri = clobUri).withEntity(
-      Json.obj(
-        "command" -> Json.fromString("trade"),
-        "args" -> Json.obj(
-          "token_id" -> Json.fromString(tokenId),
-          "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-          "amount"   -> Json.fromBigDecimal(money),
-          "side"     -> Side.circeEncoder(Side.Buy)
+    val request = Request[F](method = POST, uri = clobUri)
+      .withHeaders("Barrier" -> barrier)
+      .withEntity(
+        Json.obj(
+          "command" -> Json.fromString("trade"),
+          "args" -> Json.obj(
+            "token_id" -> Json.fromString(tokenId),
+            "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+            "amount"   -> Json.fromBigDecimal(money),
+            "side"     -> Side.circeEncoder(Side.Buy)
+          )
         )
       )
-    )
 
     client.run(request).use {
       case Status.Successful(response) =>
@@ -55,17 +58,19 @@ private class TradingClientImpl[F[_]: Async](
 
   override def sell(tokenId: String, entity: BigDecimal, minPrice: Option[BigDecimal]): F[Option[SellOrderResult]] = {
 
-    val request = Request[F](method = POST, uri = clobUri).withEntity(
-      Json.obj(
-        "command" -> Json.fromString("trade"),
-        "args" -> Json.obj(
-          "token_id" -> Json.fromString(tokenId),
-          "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-          "amount"   -> Json.fromBigDecimal(entity),
-          "side"     -> Side.circeEncoder(Side.Sell)
+    val request = Request[F](method = POST, uri = clobUri)
+      .withHeaders("Barrier" -> barrier)
+      .withEntity(
+        Json.obj(
+          "command" -> Json.fromString("trade"),
+          "args" -> Json.obj(
+            "token_id" -> Json.fromString(tokenId),
+            "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+            "amount"   -> Json.fromBigDecimal(entity),
+            "side"     -> Side.circeEncoder(Side.Sell)
+          )
         )
       )
-    )
 
     client.run(request).use {
       case Status.Successful(response) =>
@@ -88,7 +93,9 @@ private class TradingClientImpl[F[_]: Async](
 
   override def balance(): F[Option[BigDecimal]] = {
 
-    val request = Request[F](method = POST, uri = clobUri).withEntity(Json.obj("command" -> Json.fromString("balance")))
+    val request = Request[F](method = POST, uri = clobUri)
+      .withHeaders("Barrier" -> barrier)
+      .withEntity(Json.obj("command" -> Json.fromString("balance")))
 
     client.run(request).use {
       case Status.Successful(response) =>
@@ -128,6 +135,8 @@ object TradingClientImpl {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
     val clobUri           = Uri.unsafeFromString(config.clobAddress)
 
-    Slf4jLogger.create[F].map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.user, logger))
+    Slf4jLogger
+      .create[F]
+      .map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.barrier, config.user, logger))
   }
 }
