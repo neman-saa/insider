@@ -24,7 +24,7 @@ import scala.concurrent.duration.DurationInt
 
 class TradesRealtimeFlow[F[_]: Async: Parallel](
   client: TransfersClient[F],
-  transfersProcessor: TransfersProcessor[F],
+  transfersProcessor: TransfersProcessor,
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
@@ -39,7 +39,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 100
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
-        trades               <- transfersProcessor.extractTradesFrom(transfers)
+        trades                = transfersProcessor.extractTradesFrom(transfers)
 
         entries <- trades.traverse { trade =>
           leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
@@ -122,7 +122,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 object TradesRealtimeFlow {
   def of[F[_]: Async: Parallel](
     transfersClient: TransfersClient[F],
-    transfersProcessor: TransfersProcessor[F],
+    transfersProcessor: TransfersProcessor,
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,

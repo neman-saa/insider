@@ -7,7 +7,14 @@ import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.{LeaderboardEntry, LeaderboardStrategy, Leaderboards, TotalProfitLeaderboardCH, TradeNotification, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.{
+  LeaderboardEntry,
+  LeaderboardStrategy,
+  Leaderboards,
+  TotalProfitLeaderboardCH,
+  TradeNotification,
+  WinRateLeaderboardStrategyCH
+}
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
@@ -40,7 +47,7 @@ object Main extends IOApp.Simple {
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
 
-      transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
+      transfersProcessor = TransfersProcessorImpl()
 
       tgBackend <- HttpClientCatsBackend.resource[IO]()
       insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)

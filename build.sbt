@@ -20,6 +20,7 @@ lazy val root = (project in file("."))
       Testing.log      % Test,
       Testing.test     % Test,
       Testing.catsTest % Test,
+      Testing.weaver   % Test,
       Http4s.dsl,
       Http4s.client,
       Http4s.circe,

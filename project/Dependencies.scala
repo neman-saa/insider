@@ -48,6 +48,7 @@ object Dependencies {
     val log      = "org.typelevel" %% "log4cats-noop"                 % log4catsVersion
     val test     = "org.scalatest" %% "scalatest"                     % scalaTestVersion
     val catsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion
+    val weaver   = "org.typelevel" %% "weaver-cats"                   % "0.12.0"
   }
 
   val bot4s = "com.bot4s" %% "telegram-core" % "7.0.0"

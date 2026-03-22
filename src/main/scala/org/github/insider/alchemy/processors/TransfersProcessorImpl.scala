@@ -1,15 +1,14 @@
 package org.github.insider.alchemy.processors
 
-import cats.effect.kernel.Sync
 import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTransfer, UnknownTransfer}
 import org.github.insider.polymarket.domain.Side.{Buy, Sell}
 import org.github.insider.polymarket.domain.Trade
-import org.typelevel.log4cats.Logger
-import org.typelevel.log4cats.slf4j.Slf4jLogger
 import cats.syntax.all._
 
-private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends TransfersProcessor[F] {
+import scala.annotation.tailrec
+
+private class TransfersProcessorImpl extends TransfersProcessor {
 
   private val CTFAddress = "0xc5d563a36ae78145c45a50134d48a1215220f80a"
 
@@ -20,59 +19,92 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
       "0x0000000000000000000000000000000000000000", // null address
     )
 
-  override def extractTradesFrom(
-    transfers: List[AssetTransfer],
-  ): F[List[Trade]] = {
+  override def extractTradesFrom(transfers: List[AssetTransfer]): List[Trade] = {
     val transfersGroupedByBlockNum = transfers.groupBy(_.blockNum)
 
     val orderedTransfersGroupedByBlockNum =
       transfersGroupedByBlockNum.toList.sortBy { case (blockNum, _) => blockNum }
 
-    orderedTransfersGroupedByBlockNum.flatTraverse {
+    orderedTransfersGroupedByBlockNum.flatMap {
       case (blockNum, transfers) => extractTradesForSingleBlock(transfers, blockNum)
     }
   }
 
-  private def extractTradesForSingleBlock(transfers: List[AssetTransfer], blockNum: Long): F[List[Trade]] = {
-    def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer], txIndex: Int): F[List[Trade]] = {
-      val filteredUsdcs =
-        usdcs.filter { usdc =>
-          !(FilterOutAddresses.contains(usdc.from) || FilterOutAddresses.contains(usdc.to))
+  private def extractTradesForSingleBlock(transfers: List[AssetTransfer], blockNum: Long): List[Trade] = {
+
+    /**
+      * @param usdcs
+      *   list of USDC transfers from/to user wallet address to/from CTF Exchange
+      * @param erc1155s
+      *   list of ERC1155 transfers from/to CTF Exchange to/from user wallet address
+      */
+    def matchTransfers(usdcs: List[USDCTransfer], erc1155s: List[ERC1155Transfer], txIndex: Int): List[Trade] = {
+
+      @tailrec
+      def constructTrades(
+        usdcIndex: Int,
+        ercs: List[ERC1155Transfer],
+        trades: List[Trade],
+      ): List[Trade] = {
+        usdcs.get(usdcIndex) match {
+          case None => trades
+          case Some(usdc) =>
+            val maybeTradeWithErcIndex: Option[(Trade, Int)] =
+              ercs
+                .zipWithIndex
+                .find {
+                  case (erc, _) => erc.from == usdc.to && erc.to == usdc.from
+                }
+                .map {
+                  case (erc, ercIndex) =>
+                    val makerAddress = if (usdc.to == CTFAddress) usdc.from else usdc.to
+                    val side         = if (usdc.from == CTFAddress) Sell else Buy
+
+                    Trade(
+                      makerAddress   = makerAddress,
+                      tokenId        = BigDecimal(BigInt(erc.tokenId.stripPrefix("0x"), 16)).toString,
+                      side           = side,
+                      amount         = BigDecimal(BigInt(erc.value.stripPrefix("0x"), 16)),
+                      totalPrice     = usdc.value,
+                      blockNum       = blockNum,
+                      txHash         = erc.hash,
+                      txIndex        = txIndex,
+                      blockTimestamp = erc.blockTimestamp,
+                    ) -> ercIndex
+                }
+
+            maybeTradeWithErcIndex match {
+              case Some((trade, ercIndex)) =>
+                constructTrades(
+                  usdcIndex = usdcIndex + 1,
+                  ercs      = ercs.zipWithIndex.collect { case (transfer, i) if i != ercIndex => transfer },
+                  trades    = trades.appended(trade),
+                )
+              case None =>
+                constructTrades(
+                  usdcIndex = usdcIndex + 1,
+                  ercs      = ercs,
+                  trades    = trades,
+                )
+            }
         }
-      val filteredErcs = erc1155s.filter { erc1155 =>
-        !(FilterOutAddresses.contains(erc1155.from) || FilterOutAddresses.contains(erc1155.to))
       }
 
-      val maybePairedTrades: List[(USDCTransfer, Option[Trade])] = filteredUsdcs.map { usdc =>
-        val erc          = filteredErcs.find(x => x.from == usdc.to && x.to == usdc.from)
-        val makerAddress = if (usdc.to == CTFAddress) usdc.from else usdc.to
-        val side         = if (usdc.from == CTFAddress) Sell else Buy
+      val trades: List[Trade] = constructTrades(0, erc1155s, Nil)
 
-        usdc -> erc.map(erc =>
-          Trade(
-            makerAddress   = makerAddress,
-            tokenId        = BigDecimal(BigInt(erc.tokenId.stripPrefix("0x"), 16)).toString,
-            side           = side,
-            amount         = BigDecimal(BigInt(erc.value.stripPrefix("0x"), 16)),
-            totalPrice     = usdc.value,
-            blockNum       = blockNum,
-            txHash         = erc.hash,
-            txIndex        = txIndex,
-            blockTimestamp = erc.blockTimestamp,
-          )
-        )
-      }
+      // Sometimes transactions contain same operations separately, we need to group them into one trade
+      val combinedTrades: List[Trade] =
+        trades
+          .groupMapReduce(trade =>
+            (trade.makerAddress, trade.tokenId, trade.side, trade.blockNum, trade.txHash, trade.txIndex)
+          )(identity) {
+            case (trade1, trade2) =>
+              trade1.copy(amount = trade1.amount + trade2.amount, totalPrice = trade1.totalPrice + trade2.totalPrice)
+          }
+          .values
+          .toList
 
-      val maybeTrades: F[List[Option[Trade]]] = maybePairedTrades.traverse {
-        case (_, Some(trade)) =>
-          Sync[F].pure(trade.some)
-        case (usdc, None) if usdc.value == BigDecimal(0.0000010) => // strange return of usdc, can be ignored
-          Sync[F].pure(none)
-        case (usdc, None) =>
-          logger.info(s"No match found for USDC transfer - $usdc") *> Sync[F].pure(none)
-      }
-
-      maybeTrades.map(_.flatten)
+      combinedTrades
     }
 
     /* Map which represents an ordering index of particular tx hash */
@@ -85,7 +117,7 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
         case (txIndex, _) => txIndex
       }
 
-    orderedTransfersGroupedByTxIndex.flatTraverse {
+    orderedTransfersGroupedByTxIndex.flatMap {
       case (txIndex, transfers) =>
         val (usdcTfs: List[USDCTransfer], erc1155Tfs: List[ERC1155Transfer]) =
           transfers.partition {
@@ -93,16 +125,19 @@ private class TransfersProcessorImpl[F[_]: Sync](logger: Logger[F]) extends Tran
             case _: USDCTransfer    => true
           }
 
-        val unknownTransfers: List[UnknownTransfer] =
-          transfers.collect { case transfer: UnknownTransfer => transfer }
+        val filteredUsdcs =
+          usdcTfs.filter { usdc =>
+            !(FilterOutAddresses.contains(usdc.from) || FilterOutAddresses.contains(usdc.to))
+          }
+        val filteredErcs = erc1155Tfs.filter { erc1155 =>
+          !(FilterOutAddresses.contains(erc1155.from) || FilterOutAddresses.contains(erc1155.to))
+        }
 
-        unknownTransfers.traverse(unknownTransfer => logger.info(s"Unknown transfer detected - $unknownTransfer")) *>
-          matchTransfers(usdcTfs, erc1155Tfs, txIndex)
+        matchTransfers(filteredUsdcs, filteredErcs, txIndex)
     }
   }
 }
 
 object TransfersProcessorImpl {
-  def of[F[_]: Sync](): F[TransfersProcessor[F]] =
-    Slf4jLogger.create[F].map(logger => new TransfersProcessorImpl[F](logger))
+  def apply(): TransfersProcessor = new TransfersProcessorImpl
 }
