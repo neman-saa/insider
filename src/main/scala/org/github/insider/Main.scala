@@ -1,12 +1,9 @@
 package org.github.insider
 
-import canoe.api.TelegramClient
-import cats.effect.{IO, IOApp, Ref}
+import cats.effect.{IO, IOApp}
 import cats.implicits.catsSyntaxTuple2Parallel
-import fs2.concurrent.Topic
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
-import org.github.insider.alchemy.domain.User
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
@@ -18,16 +15,16 @@ import org.github.insider.leaderboard.{
   TradeNotification,
   WinRateLeaderboardStrategyCH
 }
-import org.github.insider.notifications.services.TelegramNotificator
+import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
 import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
-import org.github.insider.polymarket.domain.Trade
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import sttp.client4.httpclient.cats.HttpClientCatsBackend
 
 import java.time.{Instant, LocalDateTime}
 import scala.concurrent.duration.DurationInt
@@ -50,11 +47,11 @@ object Main extends IOApp.Simple {
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
 
-      transfersProcessor <- TransfersProcessorImpl.of[IO]().toResource
+      transfersProcessor = TransfersProcessorImpl()
 
-      tradeNotifications                    <- Topic[IO, TradeNotification].toResource
-      implicit0(client: TelegramClient[IO]) <- TelegramClient[IO](config.telegram.token)
-      _                                     <- TelegramNotificator.create[IO](tradeNotifications).start.toResource
+      tgBackend <- HttpClientCatsBackend.resource[IO]()
+      insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)
+      _         <- insiderBot.startPolling().start.toResource
 
       eventsWorker <- EventsExtractorWorkerGroup
         .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
@@ -84,7 +81,7 @@ object Main extends IOApp.Simple {
           tradesRepository,
           aggregatedTradesRepository,
           config.alchemy,
-          tradeNotifications,
+          insiderBot,
           leaderboards,
           eventsCached
         )
