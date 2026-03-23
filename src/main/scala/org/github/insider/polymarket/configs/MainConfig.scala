@@ -31,7 +31,7 @@ object MainConfig {
     botToken: String
   )
 
-  case class PolymarketConfig(clobAddress: String, user: String)
+  case class PolymarketConfig(clobAddress: String, user: String, barrier: String)
 
   implicit val dbConfigReader: ConfigReader[DbConfig] = {
     implicit val PropertiesConfigReader: ConfigReader[Properties] =
