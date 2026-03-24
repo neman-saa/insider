@@ -10,40 +10,80 @@ import org.github.insider.leaderboard.TradeNotification
 import sttp.client4.Backend
 
 class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Backend[F])(
-  followTokens: Ref[F, Set[String]]
+  followTokens: Ref[F, Map[String, Set[String]]] // token id to set of usernames
 ) extends TelegramBot[F](token, backend)
     with Polling[F] {
 
   def sendNotifications(notifications: List[TradeNotification]): F[Unit] =
     notifications
       .traverse_ { notification =>
-        request(SendMessage(chatId, toMessage(notification)))
+        request(SendMessage(chatId, tradeNotificationToMessage(notification)))
       }
       .handleErrorWith(_ => Async[F].unit)
 
-  override def receiveChannelPost(message: Message): F[Unit] = {
+  override def receiveMessage(message: Message): F[Unit] = {
     if (message.chat.chatId != chatId) Async[F].unit
 
     val action = message.text match {
+      case Some(msg) if msg.startsWith("/follow-list") =>
+        val maybeUsername = message.from.flatMap(_.username)
+
+        maybeUsername match {
+          case Some(username) =>
+            followTokens.get.flatMap { tokens =>
+              val followedTokens = tokens.collect {
+                case (token, usernames) if usernames.contains(username) => token
+              }.toList
+
+              request(SendMessage(chatId, followListToMessage(username, followedTokens))).void
+            }
+          case None =>
+            request(SendMessage(chatId, "Can't extract your Telegram username ❌")).void
+        }
+
       case Some(msg) if msg.startsWith("/follow") =>
+        val maybeUsername      = message.from.flatMap(_.username)
         val maybeTokenToFollow = msg.split(" ").toList.get(1)
 
-        maybeTokenToFollow match {
-          case Some(token) =>
-            followTokens.getAndUpdate(tokens => tokens.incl(token)) >>
-              request(SendMessage(chatId, "Token was successfully included to follow list ✅")).void
+        maybeUsername match {
+          case Some(username) =>
+            maybeTokenToFollow match {
+              case Some(token) =>
+                followTokens.getAndUpdate { tokens =>
+                  val existingFollowers   = tokens.getOrElse(token, Set.empty)
+                  val updatedFollowersSet = existingFollowers.incl(username)
+
+                  tokens.updated(token, updatedFollowersSet)
+                } >> request(
+                  SendMessage(chatId, "Token was successfully included to follow list, you will be pinged ✅")
+                ).void
+              case None =>
+                request(SendMessage(chatId, "Token for follow is not provided ❌")).void
+            }
           case None =>
-            request(SendMessage(chatId, "Token for follow is not provided ❌")).void
+            request(SendMessage(chatId, "Can't extract your Telegram username ❌")).void
         }
+
       case Some(msg) if msg.startsWith("/unfollow") =>
+        val maybeUsername        = message.from.flatMap(_.username)
         val maybeTokenToUnfollow = msg.split(" ").toList.get(1)
 
-        maybeTokenToUnfollow match {
-          case Some(token) =>
-            followTokens.getAndUpdate(tokens => tokens.excl(token)) >>
-              request(SendMessage(chatId, "Token was successfully excluded to follow list ✅")).void
+        maybeUsername match {
+          case Some(username) =>
+            maybeTokenToUnfollow match {
+              case Some(token) =>
+                followTokens.getAndUpdate { tokens =>
+                  val existingFollowers   = tokens.getOrElse(token, Set.empty)
+                  val updatedFollowersSet = existingFollowers.excl(username)
+
+                  if (updatedFollowersSet.isEmpty) tokens.removed(token)
+                  else tokens.updated(token, updatedFollowersSet)
+                } >> request(SendMessage(chatId, "Token was successfully excluded from follow list ✅")).void
+              case None =>
+                request(SendMessage(chatId, "Token for unfollow is not provided ❌")).void
+            }
           case None =>
-            request(SendMessage(chatId, "Token for unfollow is not provided ❌")).void
+            request(SendMessage(chatId, "Can't extract your Telegram username ❌")).void
         }
       case _ => Async[F].unit
     }
@@ -51,7 +91,18 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
     action.handleErrorWith(_ => Async[F].unit)
   }
 
-  private def toMessage(notification: TradeNotification): String = {
+  private def tradeNotificationToMessage(notification: TradeNotification): String = {
+    val followersStr = {
+      if (notification.followers.isEmpty) ""
+      else {
+        val followersListStr = notification.followers.map(followerUsername => s"@$followerUsername").mkString(" ")
+
+        s"""
+           |Followers $followersListStr
+           |""".stripMargin
+      }
+    }
+
     val tokenOutcome: Option[String] =
       for {
         markets <- notification.event.markets
@@ -84,6 +135,16 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
        |Market question: ${notification.event.markets.flatMap(_.headOption.map(_.question)).getOrElse("Unknown")}
        |Outcome: ${tokenOutcome.getOrElse("Unknown")}
        |$leaderboard
+       |$followersStr
+       |""".stripMargin
+  }
+
+  private def followListToMessage(username: String, tokens: List[String]): String = {
+    val tokensListStr = tokens.map(token => "- " + token).mkString("\n")
+
+    s"""
+       |Tokens followed by @$username (${tokens.size})
+       |$tokensListStr
        |""".stripMargin
   }
 }

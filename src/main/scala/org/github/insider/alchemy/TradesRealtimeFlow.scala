@@ -31,7 +31,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   tgBot: InsiderTelegramBot[F],
   leaderboards: Leaderboards[F],
   eventsCached: EventsCached[F],
-  followTokens: Ref[F, Set[String]],
+  followTokens: Ref[F, Map[String, Set[String]]],
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -60,7 +60,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         events <- if (tokens.nonEmpty) eventsCached.find(tokens) else Map.empty[String, Event].pure[F]
 
         notifications = filteredEntries.map {
-          case (trade, entries) => TradeNotification(trade, entries, events(trade.tokenId))
+          case (trade, entries) =>
+            TradeNotification(
+              trade              = trade,
+              leaderboardEntries = entries,
+              event              = events(trade.tokenId),
+              followers          = followTokens.getOrElse(trade.tokenId, Set.empty)
+            )
         }
 
         _ <- tgBot.sendNotifications(notifications)
@@ -133,7 +139,7 @@ object TradesRealtimeFlow {
     tgBot: InsiderTelegramBot[F],
     leaderboards: Leaderboards[F],
     eventsCached: EventsCached[F],
-    followTokens: Ref[F, Set[String]],
+    followTokens: Ref[F, Map[String, Set[String]]],
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]

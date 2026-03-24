@@ -49,7 +49,7 @@ object Main extends IOApp.Simple {
 
       transfersProcessor = TransfersProcessorImpl()
 
-      followTokens <- Ref.empty[IO, Set[String]].toResource
+      followTokens <- Ref.empty[IO, Map[String, Set[String]]].toResource
 
       tgBackend <- HttpClientCatsBackend.resource[IO]()
       insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(followTokens)
