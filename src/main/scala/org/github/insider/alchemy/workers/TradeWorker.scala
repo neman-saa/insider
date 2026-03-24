@@ -19,7 +19,7 @@ class TradeWorker[F[_]: Async](
   client: TransfersClient[F],
   ctfAddress: String,
   step: Int,
-  transfersProcessor: TransfersProcessor[F],
+  transfersProcessor: TransfersProcessor,
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F]
 )(workerNumber: Int) {
@@ -34,7 +34,7 @@ class TradeWorker[F[_]: Async](
   private def runRange(fromBlock: Int, toBlock: Int): F[Unit] = {
     for {
       transfers <- getAssetsTransfersInRange(fromBlock, toBlock)
-      trades    <- transfersProcessor.extractTradesFrom(transfers)
+      trades     = transfersProcessor.extractTradesFrom(transfers)
       _ <- logger.info(
         s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
       )
@@ -89,7 +89,7 @@ object TradeWorker {
     transfersClient: TransfersClient[F],
     ctfAddress: String,
     step: Int,
-    transfersProcessor: TransfersProcessor[F],
+    transfersProcessor: TransfersProcessor,
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F]
   )(

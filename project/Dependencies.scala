@@ -8,10 +8,6 @@ object Dependencies {
   private val log4catsVersion   = "2.4.0"
   private val telegramBotClient = "0.6.0"
 
-  object TelegramBot {
-    val client = "org.augustjune" %% "canoe" % telegramBotClient
-  }
-
   object Circe {
     private val circeVersion = "0.14.1"
 
@@ -41,6 +37,10 @@ object Dependencies {
     val circe  = "org.http4s" %% "http4s-circe"        % http4sVersion
   }
 
+  object Sttp {
+    val catsBackend = "com.softwaremill.sttp.client4" %% "cats" % "4.0.19"
+  }
+
   object Testing {
     private val scalaTestVersion           = "3.2.12"
     private val scalaTestCatsEffectVersion = "1.4.0"
@@ -48,7 +48,10 @@ object Dependencies {
     val log      = "org.typelevel" %% "log4cats-noop"                 % log4catsVersion
     val test     = "org.scalatest" %% "scalatest"                     % scalaTestVersion
     val catsTest = "org.typelevel" %% "cats-effect-testing-scalatest" % scalaTestCatsEffectVersion
+    val weaver   = "org.typelevel" %% "weaver-cats"                   % "0.12.0"
   }
+
+  val bot4s = "com.bot4s" %% "telegram-core" % "7.0.0"
 
   val catsEffect  = "org.typelevel"           %% "cats-effect"       % catsEffectVersion
   val pureConfig  = "com.github.pureconfig"   %% "pureconfig"        % pureConfigVersion

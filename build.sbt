@@ -2,7 +2,7 @@ import Dependencies._
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / scalaVersion := "2.13.17"
+ThisBuild / scalaVersion := "2.13.18"
 
 lazy val root = (project in file("."))
   .settings(
@@ -15,10 +15,12 @@ lazy val root = (project in file("."))
       migrations,
       clickhouse,
       cache,
-      TelegramBot.client,
+      bot4s,
+      Sttp.catsBackend,
       Testing.log      % Test,
       Testing.test     % Test,
       Testing.catsTest % Test,
+      Testing.weaver   % Test,
       Http4s.dsl,
       Http4s.client,
       Http4s.circe,
