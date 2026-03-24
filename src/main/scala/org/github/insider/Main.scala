@@ -1,6 +1,6 @@
 package org.github.insider
 
-import cats.effect.{IO, IOApp}
+import cats.effect.{IO, IOApp, Ref}
 import cats.implicits.catsSyntaxTuple2Parallel
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
@@ -49,9 +49,11 @@ object Main extends IOApp.Simple {
 
       transfersProcessor = TransfersProcessorImpl()
 
+      followTokens <- Ref.empty[IO, Set[String]].toResource
+
       tgBackend <- HttpClientCatsBackend.resource[IO]()
-      insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)
-      _         <- insiderBot.startPolling().start.toResource
+      insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(followTokens)
+      _         <- runForeverTgPolling(insiderBot).start.toResource
 
       eventsWorker <- EventsExtractorWorkerGroup
         .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
@@ -83,7 +85,8 @@ object Main extends IOApp.Simple {
           config.alchemy,
           insiderBot,
           leaderboards,
-          eventsCached
+          eventsCached,
+          followTokens,
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
@@ -102,4 +105,7 @@ object Main extends IOApp.Simple {
         } yield ()
     }
   }
+
+  private def runForeverTgPolling(tgBot: InsiderTelegramBot[IO]): IO[Unit] =
+    tgBot.startPolling().handleErrorWith(_ => IO.sleep(10.seconds)).foreverM
 }

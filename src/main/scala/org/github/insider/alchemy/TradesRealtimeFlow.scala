@@ -30,7 +30,8 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   alchemyConfig: AlchemyConfig,
   tgBot: InsiderTelegramBot[F],
   leaderboards: Leaderboards[F],
-  eventsCached: EventsCached[F]
+  eventsCached: EventsCached[F],
+  followTokens: Ref[F, Set[String]],
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -45,10 +46,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
           leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
         }
 
+        followTokens <- followTokens.get
+
         filteredEntries = entries.filter {
-          case (trade, entries) =>
-            entries.nonEmpty && trade.singleTokenPrice < BigDecimal(0.8) &&
-            trade.totalPrice >= BigDecimal(100) && trade.side == Side.Buy
+          case (trade, entries) if entries.nonEmpty =>
+            (trade.side == Side.Sell && followTokens.contains(trade.tokenId)) ||
+            (trade.side == Side.Buy && trade.singleTokenPrice < BigDecimal(0.8) && trade.totalPrice >= BigDecimal(100))
+          case _ => false
         }
 
         tokens = filteredEntries.map(_._1.tokenId).distinct
@@ -128,7 +132,8 @@ object TradesRealtimeFlow {
     alchemyConfig: AlchemyConfig,
     tgBot: InsiderTelegramBot[F],
     leaderboards: Leaderboards[F],
-    eventsCached: EventsCached[F]
+    eventsCached: EventsCached[F],
+    followTokens: Ref[F, Set[String]],
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -141,7 +146,8 @@ object TradesRealtimeFlow {
           alchemyConfig,
           tgBot,
           leaderboards,
-          eventsCached
+          eventsCached,
+          followTokens
         )(logger)
       )
 }
