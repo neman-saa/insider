@@ -17,11 +17,11 @@ private class TradingClientImpl[F[_]: Async](
   client: Client[F],
   clobUri: Uri,
   barrier: String,
-  user: String,
+  userAddress: String,
   logger: Logger[F],
 ) extends TradingClient[F] {
 
-  override def buy(tokenId: String, money: BigDecimal, maxPrice: Option[BigDecimal]): F[Option[BuyOrderResult]] = {
+  override def buy(tokenId: String, amount: BigDecimal, maxPrice: Option[BigDecimal]): F[BuyOrderResult] = {
 
     val request = Request[F](method = POST, uri = clobUri)
       .withHeaders("Barrier" -> barrier)
@@ -29,10 +29,11 @@ private class TradingClientImpl[F[_]: Async](
         Json.obj(
           "command" -> Json.fromString("trade"),
           "args" -> Json.obj(
-            "token_id" -> Json.fromString(tokenId),
-            "price"    -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-            "amount"   -> Json.fromBigDecimal(money),
-            "side"     -> Side.circeEncoder(Side.Buy)
+            "token_id"   -> Json.fromString(tokenId),
+            "price"      -> maxPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+            "amount"     -> Json.fromBigDecimal(amount),
+            "side"       -> Side.circeEncoder(Side.Buy),
+            "order_type" -> Json.fromString("FAK")
           )
         )
       )
@@ -43,20 +44,29 @@ private class TradingClientImpl[F[_]: Async](
           .as[Json]
           .map(json =>
             for {
-              amount     <- json.hcursor.downField("takingAmount").as[BigDecimal].toOption
-              totalPrice <- json.hcursor.downField("makingAmount").as[BigDecimal].toOption
+              amount     <- json.hcursor.downField("takingAmount").as[BigDecimal]
+              totalPrice <- json.hcursor.downField("makingAmount").as[BigDecimal]
             } yield BuyOrderResult(amount, totalPrice)
           )
+          .flatMap {
+            case Right(result) =>
+              logger.info(
+                s"${result.amount} tokens $tokenId bought successful with price ${result.totalPrice}"
+              ) >> result.pure[F]
+            case Left(error) =>
+              logger.error(s"Error parsing buy order result from response: ${error.getMessage}") >> Async[F]
+                .raiseError(new Throwable(error))
+          }
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
           logger.error(s"Unsuccessful response received while make buy order: $error") >>
-            none[BuyOrderResult].pure[F]
+            Async[F].raiseError(new Throwable(error))
         }
     }
   }
 
-  override def sell(tokenId: String, entity: BigDecimal, minPrice: Option[BigDecimal]): F[Option[SellOrderResult]] = {
+  override def sell(tokenId: String, shares: BigDecimal, minPrice: Option[BigDecimal]): F[SellOrderResult] = {
 
     val request = Request[F](method = POST, uri = clobUri)
       .withHeaders("Barrier" -> barrier)
@@ -64,10 +74,11 @@ private class TradingClientImpl[F[_]: Async](
         Json.obj(
           "command" -> Json.fromString("trade"),
           "args" -> Json.obj(
-            "token_id" -> Json.fromString(tokenId),
-            "price"    -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
-            "amount"   -> Json.fromBigDecimal(entity),
-            "side"     -> Side.circeEncoder(Side.Sell)
+            "token_id"   -> Json.fromString(tokenId),
+            "price"      -> minPrice.map(Json.fromBigDecimal).getOrElse(Json.Null),
+            "amount"     -> Json.fromBigDecimal(shares),
+            "side"       -> Side.circeEncoder(Side.Sell),
+            "order_type" -> Json.fromString("FAK")
           )
         )
       )
@@ -78,20 +89,29 @@ private class TradingClientImpl[F[_]: Async](
           .as[Json]
           .map(json =>
             for {
-              amount     <- json.hcursor.downField("makingAmount").as[BigDecimal].toOption
-              totalPrice <- json.hcursor.downField("takingAmount").as[BigDecimal].toOption
+              amount     <- json.hcursor.downField("makingAmount").as[BigDecimal]
+              totalPrice <- json.hcursor.downField("takingAmount").as[BigDecimal]
             } yield SellOrderResult(amount, totalPrice)
           )
+          .flatMap {
+            case Right(result) =>
+              logger.info(
+                s"${result.amount} tokens $tokenId sold successful with price ${result.totalPrice}"
+              ) >> result.pure[F]
+            case Left(error) =>
+              logger.error(s"Error parsing sell order result from response: ${error.getMessage}") >> Async[F]
+                .raiseError(new Throwable(error))
+          }
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
-          logger.error(s"Unsuccessful response received while make sell order: $error") >>
-            none[SellOrderResult].pure[F]
+          logger.error(s"Unsuccessful response received while make sell order: $error") >> Async[F]
+            .raiseError(new Throwable(error))
         }
     }
   }
 
-  override def balance(): F[Option[BigDecimal]] = {
+  override def balance(): F[BigDecimal] = {
 
     val request = Request[F](method = POST, uri = clobUri)
       .withHeaders("Barrier" -> barrier)
@@ -101,22 +121,29 @@ private class TradingClientImpl[F[_]: Async](
       case Status.Successful(response) =>
         response
           .as[Json]
-          .map(_.hcursor.downField("balance").as[BigDecimal].toOption)
+          .map(_.hcursor.downField("balance").as[BigDecimal])
           .map(_.map(_ / 1e6))
+          .flatMap {
+            case Right(balance) =>
+              logger.info(s"Balance fetched successfully: $balance") >> balance.pure[F]
+            case Left(error) =>
+              logger.error(s"Error parsing balance from response: ${error.getMessage}") >> Async[F]
+                .raiseError(new Throwable(error))
+          }
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
           logger.error(s"Unsuccessful response received while fetching balance: $error") >>
-            none[BigDecimal].pure[F]
+            Async[F].raiseError(new Throwable(error))
         }
     }
   }
 
-  override def positions(): F[List[Position]] = {
+  override def positions(user: Option[String]): F[List[Position]] = {
     val uri: Uri =
       DataApiHost
         .addSegment("positions")
-        .withQueryParam("user", user)
+        .withQueryParam("user", user.getOrElse(userAddress))
 
     client.get[List[Position]](uri) {
       case Status.Successful(response) => response.as[List[Position]]
@@ -124,7 +151,93 @@ private class TradingClientImpl[F[_]: Async](
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
           logger.error(s"Unsuccessful response received while fetching positions: $error") >>
-            List[Position]().pure[F]
+            Async[F].raiseError(new Throwable(error))
+        }
+    }
+  }
+
+  override def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): F[Unit] = {
+
+    val request = Request[F](method = POST, uri = clobUri)
+      .withHeaders("Barrier" -> barrier)
+      .withEntity(
+        Json.obj(
+          "command" -> Json.fromString("trade"),
+          "args" -> Json.obj(
+            "token_id"   -> Json.fromString(tokenId),
+            "price"      -> Json.fromBigDecimal(price),
+            "amount"     -> Json.fromBigDecimal(amount),
+            "side"       -> Side.circeEncoder(Side.Buy),
+            "order_type" -> Json.fromString("GTC")
+          )
+        )
+      )
+
+    client.run(request).use {
+      case Status.Successful(response) =>
+        ()
+        response
+          .as[Json]
+          .map(json => {
+            val resp = json.hcursor.downField("success").as[Boolean].toOption
+            if (resp.contains(true))
+              logger.info(s"Buy order placed successfully for token $tokenId with amount $amount and price $price")
+            else {
+              val error = json.findAllByKey("errorMsg").headOption.flatMap(_.asString).getOrElse("Unknown error")
+              logger
+                .error(s"Unsuccessful response received while placing buy order: $error") >> Async[F]
+                .raiseError(new Throwable(error))
+            }
+          })
+
+      case other =>
+        other.as[Json].flatMap { json =>
+          val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
+          logger.error(s"Unsuccessful response received while placing buy order: $error") >>
+            Async[F].raiseError(new Throwable(error))
+        }
+    }
+  }
+
+  override def sellOrder(tokenId: String, shares: BigDecimal, price: BigDecimal): F[Unit] = {
+
+    val request = Request[F](method = POST, uri = clobUri)
+      .withHeaders("Barrier" -> barrier)
+      .withEntity(
+        Json.obj(
+          "command" -> Json.fromString("trade"),
+          "args" -> Json.obj(
+            "token_id"   -> Json.fromString(tokenId),
+            "price"      -> Json.fromBigDecimal(price),
+            "amount"     -> Json.fromBigDecimal(shares),
+            "side"       -> Side.circeEncoder(Side.Sell),
+            "order_type" -> Json.fromString("GTC")
+          )
+        )
+      )
+
+    client.run(request).use {
+      case Status.Successful(response) =>
+        ()
+        response
+          .as[Json]
+          .map(json => {
+            val resp = json.hcursor.downField("success").as[Boolean].toOption
+            if (resp.contains(true))
+              logger.info(s"Buy order placed successfully for token $tokenId with shares $shares and price $price")
+            else {
+              val error = json.findAllByKey("errorMsg").headOption.flatMap(_.asString).getOrElse("Unknown error")
+              logger
+                .error(s"Unsuccessful response received while placing sell order: $error") >> Async[F]
+                .raiseError(new Throwable(error))
+            }
+          })
+
+      case other =>
+        other.as[Json].flatMap { json =>
+          val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
+          logger.error(s"Unsuccessful response received while placing sell order: $error") >>
+            Async[F].raiseError(new Throwable(error))
         }
     }
   }
@@ -137,6 +250,6 @@ object TradingClientImpl {
 
     Slf4jLogger
       .create[F]
-      .map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.barrier, config.user, logger))
+      .map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.barrier, config.userAddress, logger))
   }
 }

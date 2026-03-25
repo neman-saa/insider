@@ -3,8 +3,10 @@ package org.github.insider.polymarket.client
 import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult}
 
 trait TradingClient[F[_]] {
-  def buy(tokenId: String, money: BigDecimal, maxPrice: Option[BigDecimal]): F[Option[BuyOrderResult]]
-  def sell(tokenId: String, entity: BigDecimal, minPrice: Option[BigDecimal]): F[Option[SellOrderResult]]
-  def balance(): F[Option[BigDecimal]]
-  def positions(): F[List[Position]]
+  def buy(tokenId: String, amount: BigDecimal, maxPrice: Option[BigDecimal]): F[BuyOrderResult]
+  def sell(tokenId: String, shares: BigDecimal, minPrice: Option[BigDecimal]): F[SellOrderResult]
+  def balance(): F[BigDecimal]
+  def positions(user: Option[String] = None): F[List[Position]]
+  def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): F[Unit]
+  def sellOrder(tokenId: String, shares: BigDecimal, price: BigDecimal): F[Unit]
 }
