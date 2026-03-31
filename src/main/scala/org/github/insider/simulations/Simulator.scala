@@ -1,134 +1,199 @@
 package org.github.insider.simulations
 
+import cats.data.NonEmptyList
 import cats.effect.{Async, Ref}
 import cats.syntax.all._
 import org.github.insider.alchemy.repository.TradesRepository
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry, LeaderboardStrategy}
-import org.github.insider.polymarket.repository.Markets
+import org.github.insider.polymarket.domain.Side
+import org.typelevel.log4cats.Logger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{Instant, ZoneOffset}
+import java.time.Instant
 
 class Simulator[F[_]: Async](
   leaderboard: LeaderboardStrategy[F],
-  trades: TradesRepository[F],
-  markets: Markets[F]
-) {
+  simulationsRepository: SimulationsRepository[F],
+)(
+  leaderboardRef: Ref[F, Map[HexAddress, LeaderboardEntry]],
+  lastLeaderboardBlockRef: Ref[F, Int],
+  tokenResolutionsRef: Ref[F, Map[TokenId, TokenResolutionInfo]],
+)(logger: Logger[F]) {
 
-  private type TokenState = (BigDecimal, Int, Instant)
-  private type Tokens     = Map[String, TokenState]
-
-  def simulate(maxForUser: BigDecimal, batchLength: Int, initialBalance: BigDecimal): F[BigDecimal] = {
-
-    def isLeaderboardExpired(currentDate: Instant, lbLastUpdate: Instant): Boolean =
-      currentDate.getEpochSecond - lbLastUpdate.getEpochSecond > 3600 * 24
-
-    def activeTokens(tokens: Tokens, currentDate: Instant): Tokens =
-      tokens.filter {
-        case (_, (_, _, closeDate)) =>
-          closeDate.getEpochSecond > currentDate.getEpochSecond
-      }
-
-    def totalTokenValue(tokens: Tokens): BigDecimal =
-      tokens.values.map { case (amount, price, _) => amount * price }.sum
-
-    def mergeTokens(oldTokens: Tokens, newTokens: Tokens): Tokens =
-      oldTokens ++ newTokens.map {
-        case (tokenId, (newAmount, newPrice, newDate)) =>
-          val (oldAmount, _, _) = oldTokens.getOrElse(tokenId, (BigDecimal(0), 0, Instant.now))
-          (tokenId, (newAmount + oldAmount, newPrice, newDate))
-      }
-
-    def recursion(
-      currentBalance: BigDecimal,
-      currentDate: Instant,
-      tokens: Tokens,
-      offset: Long,
-      lbLastUpdate: Instant,
-      leaderboardRef: Ref[F, Map[HexAddress, LeaderboardEntry]]
-    ): F[BigDecimal] =
-      if (isLeaderboardExpired(currentDate, lbLastUpdate))
-        for {
-          board <- leaderboard.load(currentDate, 1000)
-          _     <- leaderboardRef.set(board)
-          res   <- recursion(currentBalance, currentDate, tokens, offset, currentDate, leaderboardRef)
-        } yield res
-      else
-        for {
-          batch <- trades.getHistoricalTrades(offset, batchLength)
-
-          res <-
-            if (batch.isEmpty) {
-              (currentBalance + totalTokenValue(tokens)).pure[F]
-            } else {
-              for {
-                currentLeaderboard <- leaderboardRef.get
-
-                filteredTrades = batch.filter(trade => currentLeaderboard.contains(HexAddress(trade.makerAddress)))
-
-                totalScore = currentLeaderboard.values.map(_.score).sum
-
-                validTokens   = activeTokens(tokens, currentDate)
-                markedBalance = currentBalance + totalTokenValue(tokens.removedAll(validTokens.keys))
-
-                purchasesFromTrades <- filteredTrades
-                  .map(trade => (trade.tokenId, trade.makerAddress, trade.singleTokenPrice))
-                  .traverse {
-                    case (tokenId, makerAddress, singleTokenPrice) =>
-                      for {
-                        (closeDate, lastPrice) <- markets.getMarketClosedTimeWithLastPriceByTokenId(tokenId)
-                        userScore               = currentLeaderboard(HexAddress(makerAddress)).score
-                      } yield (userScore, closeDate, lastPrice, singleTokenPrice, tokenId)
-                  }
-
-                (newTokens, newBalance) = purchasesFromTrades.foldLeft(
-                  (Map.empty[String, TokenState], markedBalance)
-                ) {
-                  case ((accTokens, balance), (userScore, closeDate, lastPrice, singleTokenPrice, tokenId)) =>
-                    val cost =
-                      scala.math.min((userScore / totalScore).toDouble, maxForUser.toDouble) * balance / 20
-                    val tokenAmount    = cost / (singleTokenPrice + 0.01)
-                    val updatedBalance = balance - cost
-                    val updatedTokens = accTokens.updatedWith(tokenId) {
-                      case Some((existingAmount, _, _)) =>
-                        Some((existingAmount + tokenAmount, lastPrice, closeDate))
-                      case None =>
-                        Some((tokenAmount, lastPrice, closeDate))
-                    }
-
-                    (updatedTokens, updatedBalance)
-                }
-
-                finalTokens = mergeTokens(validTokens, newTokens)
-
-                nextDate = batch
-                  .flatMap(_.blockTimestamp)
-                  .maxBy(_.toInstant(ZoneOffset.UTC))
-                  .toInstant(ZoneOffset.UTC)
-
-                res <- recursion(
-                  newBalance,
-                  nextDate,
-                  finalTokens,
-                  offset + batchLength,
-                  lbLastUpdate,
-                  leaderboardRef
-                )
-              } yield res
-            }
-        } yield res
-
+  def start(start: Int, end: Int)(config: SimulationConfig): F[Unit] = {
     for {
-      earliestTime       <- trades.getEarliestTradeTimestamp
-      initialLeaderboard <- leaderboard.load(earliestTime, 1000)
-      leaderboardRef     <- Ref.of[F, Map[HexAddress, LeaderboardEntry]](initialLeaderboard)
-      res <- recursion(
-        initialBalance,
-        earliestTime,
-        Map.empty,
-        0L,
-        earliestTime,
-        leaderboardRef
-      )
-    } yield res
+      leaderboard <- leaderboard.load(start, limit = config.leaderboardLimit)
+      _           <- leaderboardRef.set(leaderboard)
+      _           <- lastLeaderboardBlockRef.set(start)
+
+      primaryWallet   = Wallet.initWith(config.initialWalletBalance, start, None, Wallet.PrimaryWalletId)
+      walletsPoolRef <- Ref.of[F, WalletsPool](WalletsPool.initWithPrimary(primaryWallet))
+
+      ranges = (start to end).grouped(config.blocksProcessingBatchSize).toList
+      _     <- ranges.traverse_(range => processRange(range.start, range.end)(walletsPoolRef, config))
+
+      updatedPrimaryWallet <- walletsPoolRef.get.map(_.primary)
+      _                    <- simulationsRepository.insertWallets(NonEmptyList.of(updatedPrimaryWallet))
+    } yield ()
   }
+
+  private def processRange(from: Int, to: Int)(
+    walletsPoolRef: Ref[F, WalletsPool],
+    config: SimulationConfig,
+  ): F[Unit] =
+    for {
+      _                        <- logger.info(s"Starting processing of [$from, $to] range")
+      trades                   <- simulationsRepository.getHistoricalTrades(from, to)
+      maybeLatestBlockTimestamp = getLatestBlockTimestampFrom(trades)
+      _                        <- logger.info(s"Trades fetched: ${trades.size}")
+
+      leaderboard <- leaderboardRef.get
+      walletsPool <- walletsPoolRef.get
+
+      walletsNel          = walletsPool.toNel
+      processedWalletsNel = walletsNel.map(wallet => processTrades(trades, wallet, leaderboard))
+
+      updatedWalletsPool = WalletsPool.fromNel(processedWalletsNel)
+
+      tokenResolutions <- tokenResolutionsRef.get
+
+      updatedTokenResolutions = updateTokenResolutions(trades, tokenResolutions)
+      resolvedWalletsPool = updatedWalletsPool.resolveTokens(
+        updatedTokenResolutions,
+        maybeLatestBlockTimestamp,
+        lockProfit = true
+      )
+      cleanedTokenResolutions = removeExpiredTokens(updatedTokenResolutions, maybeLatestBlockTimestamp)
+      _                      <- tokenResolutionsRef.set(cleanedTokenResolutions)
+      _                      <- logger.info(s"Token Resolutions map size: ${cleanedTokenResolutions.size}")
+
+      (cleanedWalletsPool, expiredWallets) =
+        resolvedWalletsPool.removeExpiredWallets(
+          cleanedTokenResolutions,
+          currentBlock                      = to,
+          sellActiveTokensAtResolutionPrice = true
+        )
+      _ <- NonEmptyList.fromList(expiredWallets).fold(Async[F].unit)(simulationsRepository.insertWallets)
+
+      newWallets     <- generateWallets(expiredWallets, cleanedWalletsPool.temporary.size, currentBlock = to)(config)
+      nextWalletsPool = cleanedWalletsPool.addWallets(newWallets)
+      _              <- walletsPoolRef.set(nextWalletsPool)
+      _              <- logger.info(s"Temporary wallets in pool: + ${nextWalletsPool.temporary.size}")
+
+      _ <- maybeReloadLeaderboard(currentBlock = to)(config)
+    } yield ()
+
+  private def getLatestBlockTimestampFrom(trades: List[SimulationTrade]): Option[Instant] = {
+    trades
+      .reverse
+      .collectFirst {
+        case trade if trade.blockTimestamp.nonEmpty => trade.blockTimestamp
+      }
+      .flatten
+  }
+
+  private def updateTokenResolutions(
+    trades: List[SimulationTrade],
+    tokenResolutions: Map[TokenId, TokenResolutionInfo]
+  ): Map[TokenId, TokenResolutionInfo] = {
+    val tokenResolutionsFromTrades =
+      trades.map(trade => trade.tokenId -> TokenResolutionInfo(trade.lastPrice, trade.closedTime))
+
+    tokenResolutions ++ tokenResolutionsFromTrades
+  }
+
+  private def removeExpiredTokens(
+    tokenResolutions: Map[TokenId, TokenResolutionInfo],
+    maybeLatestBlockTimestamp: Option[Instant],
+  ): Map[TokenId, TokenResolutionInfo] = {
+    maybeLatestBlockTimestamp match {
+      case Some(latestBlockTimestamp) =>
+        tokenResolutions.collect {
+          case (tokenId, resolutionInfo) if latestBlockTimestamp isAfter resolutionInfo.resolveDate =>
+            tokenId -> resolutionInfo
+        }
+      case None =>
+        tokenResolutions
+    }
+  }
+
+  private def generateWallets(expiredWallets: List[Wallet], activeWalletsCount: Int, currentBlock: Int)(
+    config: SimulationConfig
+  ): F[List[Wallet]] = {
+    val fromBlocks         = expiredWallets.flatMap(wallet => wallet.activeToBlock.map(activeTo => activeTo + 1))
+    val extendedFromBlocks = fromBlocks.padTo(config.maxTemporaryWalletsInPool - activeWalletsCount, currentBlock + 1)
+
+    extendedFromBlocks.traverse { activeFromBlock =>
+      Wallet.genWithRandomExpiration[F](activeFromBlock)(config)
+    }
+  }
+
+  private def maybeReloadLeaderboard(currentBlock: Int)(config: SimulationConfig): F[Unit] =
+    lastLeaderboardBlockRef.get.flatMap { lastLeaderboardBlock =>
+      if (currentBlock - lastLeaderboardBlock >= config.leaderboardBlocksLifetime) {
+        for {
+          leaderboard <- leaderboard.load(currentBlock, limit = config.leaderboardLimit)
+          _           <- leaderboardRef.set(leaderboard)
+          _           <- lastLeaderboardBlockRef.set(currentBlock)
+        } yield ()
+      } else Async[F].unit
+    }
+
+  private def processTrades(
+    trades: List[SimulationTrade],
+    wallet: Wallet,
+    leaderboard: Map[HexAddress, LeaderboardEntry],
+  ): Wallet = {
+    val tradesMatchesLeaderboard: List[(SimulationTrade, LeaderboardEntry)] =
+      trades.flatMap(trade => leaderboard.get(HexAddress(trade.makerAddress)).map(entry => (trade, entry)))
+    val updatedWallet: Wallet =
+      tradesMatchesLeaderboard.foldLeft[Wallet](wallet) {
+        case (currentWallet, (trade, leaderboardEntry)) =>
+          trade.side match {
+            case Side.Buy =>
+              val maybeUpdatedWallet =
+                currentWallet.copyBuy(
+                  tokenId                = trade.tokenId,
+                  leader                 = HexAddress(trade.makerAddress),
+                  amount                 = trade.amount,
+                  totalPrice             = trade.totalPrice,
+                  leaderboardEntry       = leaderboardEntry,
+                  blockNum               = trade.blockNum,
+                  extraBuyPerCents       = 2,
+                  allowedPerCentsPerUser = 10
+                )
+              maybeUpdatedWallet.getOrElse(currentWallet)
+            case Side.Sell =>
+              val maybeUpdatedWallet =
+                currentWallet.copySell(
+                  tokenId    = trade.tokenId,
+                  leader     = HexAddress(trade.makerAddress),
+                  amount     = trade.amount,
+                  totalPrice = trade.totalPrice,
+                  blockNum   = trade.blockNum
+                )
+
+              maybeUpdatedWallet.getOrElse(currentWallet)
+          }
+      }
+
+    updatedWallet
+  }
+}
+
+object Simulator {
+  def of[F[_]: Async](
+    leaderboard: LeaderboardStrategy[F],
+    walletsRepository: SimulationsRepository[F],
+  ): F[Simulator[F]] =
+    for {
+      logger                  <- Slf4jLogger.create[F]
+      leaderboardRef          <- Ref.of[F, Map[HexAddress, LeaderboardEntry]](Map.empty)
+      lastLeaderboardBlockRef <- Ref.of[F, Int](-1)
+      tokenResolutionsRef     <- Ref.of[F, Map[TokenId, TokenResolutionInfo]](Map.empty)
+    } yield new Simulator[F](leaderboard, walletsRepository)(
+      leaderboardRef,
+      lastLeaderboardBlockRef,
+      tokenResolutionsRef
+    )(logger)
 }

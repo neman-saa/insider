@@ -8,13 +8,11 @@ import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import org.github.insider.leaderboard.WinRateLeaderboardStrategyCH.WinRateLeaderboardEntry
 
-import java.time.Instant
-
 private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Win Rate Leaderboard")
 
-  override def load(date: Instant, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+  override def load(fromBlock: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
     query(limit)
       .query[(String, Int, Int)]
       .to[List]
@@ -24,7 +22,7 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
           .map {
             case ((makerAddress, win, lose), index) =>
               val address = HexAddress(makerAddress)
-              (address, WinRateLeaderboardEntry(address, list.size, index + 1, win, lose, 0))
+              (address, WinRateLeaderboardEntry(address, list.size, index + 1, win, lose, 0, 0, 0, 0))
           }
           .toMap[HexAddress, LeaderboardEntry]
       )
@@ -36,6 +34,8 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
         |	maker_address,
         |	countIf(last_price = 1) AS win_count,
         |	countIf(last_price = 0) AS lose_count
+        |   count(distinct tokens.market_id) as number_events,
+        |
         |FROM (
         |    SELECT
         |        maker_address,
@@ -62,7 +62,10 @@ object WinRateLeaderboardStrategyCH {
     rank: Int,
     win: Int,
     lose: Int,
-    score: BigDecimal
+    score: BigDecimal,
+    avgBuy: BigDecimal,
+    numberOfEvents: Int,
+    totalLeaderboardScore: BigDecimal
   ) extends LeaderboardEntry {
     override def prettyPrint: String =
       s"rank - $rank/$totalLeaderboardSize, win - $win, lose - $lose"

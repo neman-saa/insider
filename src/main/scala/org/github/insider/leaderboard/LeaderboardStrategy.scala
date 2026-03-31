@@ -2,13 +2,11 @@ package org.github.insider.leaderboard
 
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 
-import java.time.Instant
-
 trait LeaderboardStrategy[F[_]] {
 
   def key: LeaderboardKeyName
 
-  def load(currentDate: Instant, limit: Int): F[Map[HexAddress, LeaderboardEntry]]
+  def load(fromBlock: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]]
 
 }
 

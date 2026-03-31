@@ -8,30 +8,49 @@ import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.RoiLeaderboardStrategyCH.RoiLeaderboardEntry
 
-import java.time.{Instant, ZoneOffset}
+import java.time.Instant
 
 private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Total Profit Leaderboard")
 
-  override def load(currentDate: Instant = Instant.now(), limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
-    queryWithDate(currentDate, limit)
-      .query[(String, BigDecimal, BigDecimal, BigDecimal, Int)]
+  override def load(block: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+    queryWithDate(block, limit)
+      .query[(String, BigDecimal, BigDecimal, BigDecimal, Int, BigDecimal)]
       .to[List]
       .map(list =>
         list
           .zipWithIndex
           .map {
-            case ((makerAddress, newMoney, profit, score, nEvents), index) =>
+            case ((makerAddress, newMoney, profit, score, nEvents, avgBuy), index) =>
               val address = HexAddress(makerAddress)
-              (address, RoiLeaderboardEntry(address, index + 1, newMoney, profit, nEvents, list.size, score))
+              (
+                address,
+                RoiLeaderboardEntry(
+                  address,
+                  index + 1,
+                  newMoney,
+                  profit,
+                  list.size,
+                  score,
+                  list.map(_._4).sum,
+                  nEvents,
+                  avgBuy
+                )
+              )
           }
           .toMap[HexAddress, LeaderboardEntry]
       )
       .transact(transactor)
 
-  private def queryWithDate(date: Instant, limit: Int): Fragment =
+  private def queryWithDate(block: Long, limit: Int): Fragment =
     fr"""
+        |WITH
+        |    (
+        |        SELECT max(block_timestamp)
+        |        FROM trades
+        |        WHERE block_num = $block
+        |    ) AS block_ts
         |SELECT
         |    maker_address,
         |    sum(new_money) AS all_new_money,
@@ -40,25 +59,26 @@ private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) ex
         |    least(
         |        3.0,
         |        (sum(trade_profit) + sum(remained_tokens * last_price)) / sum(new_money)
-        |    ) * sqrt(count(DISTINCT market_id) * sum(new_money)) AS score
+        |    ) * sqrt(count(DISTINCT market_id) * sum(new_money)) AS score,
+        |    max(last_activity_timestamp) AS last_activity_timestamp
         |FROM
         |(
         |    SELECT
         |        maker_address,
         |        token_id,
+        |        markets.id AS market_id,
         |        tupled_data.1 AS new_money,
         |        tupled_data.2 AS trade_profit,
         |        tupled_data.3 / 1000000.0 AS remained_tokens,
         |        tokens.last_price AS last_price,
-        |        markets.startDate AS market_start_date,
-        |        arrayMax(t -> t.1, data) AS latest_block,
-        |        markets.id AS market_id
+        |        last_activity_timestamp
         |    FROM
         |    (
         |        SELECT
         |            maker_address,
         |            token_id,
         |            data,
+        |            last_activity_timestamp,
         |            arrayFold(
         |                (s, x) ->
         |                    tuple(
@@ -87,16 +107,16 @@ private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) ex
         |    INNER JOIN tokens ON tokens.id = t.token_id
         |    INNER JOIN markets ON tokens.market_id = markets.id
         |    WHERE
-        |        markets.startDate < $date
+        |        markets.start_date < block_ts
         |        AND (tokens.last_price = 0 OR tokens.last_price = 1)
         |) s
         |GROUP BY maker_address
         |HAVING
         |    sum(new_money) > 1000
-        |    AND max(market_start_date) > $date - INTERVAL 270 DAY
+        |    AND max(last_activity_timestamp) > block_ts - INTERVAL 270 DAY
         |ORDER BY score DESC
-        |LIMIT 1000
-      """
+        |LIMIT $limit
+    """
 }
 
 object RoiLeaderboardStrategyCH {
@@ -109,9 +129,11 @@ object RoiLeaderboardStrategyCH {
     rank: Int,
     newMoney: BigDecimal,
     profit: BigDecimal,
-    eventsNumber: Int,
     totalLeaderboardSize: Int,
-    score: BigDecimal
+    score: BigDecimal,
+    totalLeaderboardScore: BigDecimal,
+    numberOfEvents: Int,
+    avgBuy: BigDecimal
   ) extends LeaderboardEntry {
     override def prettyPrint: String =
       s"""
@@ -119,6 +141,6 @@ object RoiLeaderboardStrategyCH {
          |new money - $newMoney,
          |profit - $profit,
          |roi - ${profit / newMoney},
-         |events number - $eventsNumber""".stripMargin
+         |events number - $numberOfEvents""".stripMargin
   }
 }
