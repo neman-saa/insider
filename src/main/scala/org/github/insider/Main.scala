@@ -7,14 +7,7 @@ import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.{
-  LeaderboardEntry,
-  LeaderboardStrategy,
-  Leaderboards,
-  TotalProfitLeaderboardCH,
-  TradeNotification,
-  WinRateLeaderboardStrategyCH
-}
+import org.github.insider.leaderboard.{LeaderboardStrategy, Leaderboards, WinRateLeaderboardStrategyCH}
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
@@ -26,7 +19,6 @@ import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
 
-import java.time.{Instant, LocalDateTime}
 import scala.concurrent.duration.DurationInt
 
 object Main extends IOApp.Simple {
@@ -73,7 +65,8 @@ object Main extends IOApp.Simple {
         strategies = List[LeaderboardStrategy[IO]](
           // TotalProfitLeaderboardCH[IO](transactor),
           WinRateLeaderboardStrategyCH[IO](transactor),
-        )
+        ),
+        tradesRepository
       )
 
       realtimeTrades <- TradesRealtimeFlow

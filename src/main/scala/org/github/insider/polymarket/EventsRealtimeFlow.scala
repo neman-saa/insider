@@ -52,7 +52,8 @@ class EventsRealtimeFlow[F[_]: Async](
     for {
       lastTime <- eventsImpl.getLatestClosedDate
       ref      <- Ref.of[F, Instant](lastTime)
-      _        <- fs2.Stream.repeatEval(run(ref)).compile.drain
+      res      <- fs2.Stream.repeatEval(run(ref)).compile.drain
+
     } yield ()
   }
 

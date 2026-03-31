@@ -4,12 +4,11 @@ import cats.data.NonEmptyList
 import cats.effect.Async
 import cats.syntax.all._
 import doobie.{Transactor, Update}
-import org.github.insider.polymarket.domain.{Side, Trade}
+import org.github.insider.polymarket.domain.Trade
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import doobie.syntax.all._
-import org.github.insider.alchemy.domain.User
-import org.github.insider.alchemy.repository.codec._
+import doobie.postgres.implicits._
 
 class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends TradesRepository[F] {
 

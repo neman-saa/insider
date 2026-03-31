@@ -38,8 +38,8 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
         | closed_time,
         | event_id,
         | volume,
-        | startDate,
-        | endDate
+        | start_date,
+        | end_date
         |)
         |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin

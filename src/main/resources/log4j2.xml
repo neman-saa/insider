@@ -39,6 +39,12 @@
             <AppenderRef ref="ConsoleAppender"/>
         </Logger>
 
+        <Logger name="com.clickhouse.client.api.internal"
+                level="error"
+                additivity="false">
+            <AppenderRef ref="ConsoleAppender"/>
+        </Logger>
+
         <Root level="INFO">
             <AppenderRef ref="ConsoleAppender"/>
         </Root>

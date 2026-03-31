@@ -24,8 +24,8 @@ class EventsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) exte
         |   created_at,
         |   closed_time,
         |   tags,
-        |   startDate,
-        |   endDate,
+        |   start_date,
+        |   end_date,
         |   slug,
         |   closed
         |) VALUES

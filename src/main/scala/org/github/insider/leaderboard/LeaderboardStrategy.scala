@@ -6,7 +6,7 @@ trait LeaderboardStrategy[F[_]] {
 
   def key: LeaderboardKeyName
 
-  def load(limit: Int): F[Map[HexAddress, LeaderboardEntry]]
+  def load(fromBlock: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]]
 
 }
 

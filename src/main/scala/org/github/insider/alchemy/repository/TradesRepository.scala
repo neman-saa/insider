@@ -1,7 +1,6 @@
 package org.github.insider.alchemy.repository
 
 import cats.data.NonEmptyList
-import org.github.insider.alchemy.domain.User
 import org.github.insider.polymarket.domain.Trade
 
 trait TradesRepository[F[_]] {
