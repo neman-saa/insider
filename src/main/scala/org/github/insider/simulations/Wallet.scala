@@ -31,11 +31,8 @@ final case class Wallet(
       case None =>
         val singleTokenPrice = totalPrice / amount + 0.01
         val ourFirstPrice =
-          totalPrice /
-            leaderboardEntry.avgBuy *
             leaderboardEntry.score /
-            leaderboardEntry.totalLeaderboardScore *
-            leaderboardEntry.totalLeaderboardSize *
+              (leaderboardEntry.totalLeaderboardScore / leaderboardEntry.totalLeaderboardSize) *
             freeBalance *
             config.extraBuyPerCents / 100
         val allowedPrice = freeBalance * config.allowedPerCentsPerUser / 100
@@ -101,24 +98,12 @@ final case class Wallet(
     }
   }
 
-  def resolveTokens(
-    tokenResolutions: Map[TokenId, TokenResolutionInfo],
-    resolvedBefore: Option[Instant],
-    lockProfit: Boolean,
-  ): Wallet = {
+  def resolveTokens(tokenResolutions: Map[TokenId, TokenResolutionInfo]): Wallet = {
     val tokensToBeRemoved: List[(HexAddress, TokenId, LeaderFollowingEntry, TokenResolutionInfo)] =
-      tokens.toList.flatMap {
-        case ((makerAddress, tokenId), leaderEntry) =>
-          tokenResolutions
-            .get(tokenId)
-            .filter { resolutionInfo =>
-              resolvedBefore.forall(timestamp => resolutionInfo.resolveDate isAfter timestamp)
-            }
-            .map { resolutionInfo =>
-              (makerAddress, tokenId, leaderEntry, resolutionInfo)
-            }
+      tokens.toList.collect {
+        case ((makerAddress, tokenId), followingEntry) if tokenResolutions.contains(tokenId) =>
+          (makerAddress, tokenId, followingEntry, tokenResolutions(tokenId))
       }
-
     val profit: BigDecimal = tokensToBeRemoved.map {
       case (_, _, leaderEntry, resolutionInfo) =>
         leaderEntry.ourAmount * resolutionInfo.lastPrice // already normalized ???

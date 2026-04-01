@@ -57,14 +57,11 @@ class Simulator[F[_]: Async](
       updatedWalletsPool = WalletsPool.fromNel(processedWalletsNel)
 
       tokenResolutions <- tokenResolutionsRef.get
-
       updatedTokenResolutions = updateTokenResolutions(tradesNormalized, tokenResolutions)
-      resolvedWalletsPool = updatedWalletsPool.resolveTokens(
-        updatedTokenResolutions,
-        maybeLatestBlockTimestamp,
-        lockProfit = true
-      )
-      cleanedTokenResolutions = removeExpiredTokens(updatedTokenResolutions, maybeLatestBlockTimestamp)
+      (cleanedTokenResolutions, expiredResolutions) =
+        removeExpiredTokens(updatedTokenResolutions, maybeLatestBlockTimestamp)
+
+      resolvedWalletsPool = updatedWalletsPool.resolveTokens(expiredResolutions)
       _                      <- tokenResolutionsRef.set(cleanedTokenResolutions)
       _                      <- logger.info(s"Token Resolutions map size: ${cleanedTokenResolutions.size}")
 
@@ -106,15 +103,15 @@ class Simulator[F[_]: Async](
   private def removeExpiredTokens(
     tokenResolutions: Map[TokenId, TokenResolutionInfo],
     maybeLatestBlockTimestamp: Option[Instant],
-  ): Map[TokenId, TokenResolutionInfo] = {
+  ): (Map[TokenId, TokenResolutionInfo], Map[TokenId, TokenResolutionInfo]) = {
     maybeLatestBlockTimestamp match {
       case Some(latestBlockTimestamp) =>
-        tokenResolutions.collect {
-          case (tokenId, resolutionInfo) if latestBlockTimestamp isAfter resolutionInfo.resolveDate =>
-            tokenId -> resolutionInfo
+        tokenResolutions.partition {
+          case (_, resolutionInfo)  =>
+            latestBlockTimestamp isAfter resolutionInfo.resolveDate
         }
       case None =>
-        tokenResolutions
+        (tokenResolutions, Map.empty)
     }
   }
 
