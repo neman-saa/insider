@@ -6,11 +6,11 @@ import cats.syntax.all._
 import doobie.{Transactor, Update}
 import doobie.implicits._
 import doobie.postgres.implicits._
-import org.github.insider.polymarket.domain.{Market, Token, Volume}
+import org.github.insider.polymarket.domain.{Market, Volume}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{Instant, OffsetDateTime, ZoneOffset}
+import java.time.{OffsetDateTime, ZoneOffset}
 
 class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) extends Markets[F] {
 
@@ -76,17 +76,6 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
     } yield n).transact(transactor)
   }
 
-  override def getMarketClosedTimeWithLastPriceByTokenId(tokenId: String): F[(Instant, Int)] =
-    sql"""
-       SELECT
-          markets.closed_time,
-          tokens.last_price
-       FROM markets
-       JOIN tokens ON tokens.market_id = markets.id where tokens.id = $tokenId
-     """
-      .query[(Instant, Int)]
-      .unique
-      .transact(transactor)
 }
 
 object MarketsImpl {

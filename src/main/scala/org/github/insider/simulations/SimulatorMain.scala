@@ -24,6 +24,8 @@ object SimulatorMain extends IOApp.Simple {
       minWalletBlocksLifetime   = 60_000,
       maxWalletBlocksLifetime   = 65_000,
       maxTemporaryWalletsInPool = 3,
+      extraBuyPerCents = 2,
+      allowedPerCentsPerUser = 10
     )
 
   override def run: IO[Unit] = {

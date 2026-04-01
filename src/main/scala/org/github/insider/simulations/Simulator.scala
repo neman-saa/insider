@@ -3,7 +3,6 @@ package org.github.insider.simulations
 import cats.data.NonEmptyList
 import cats.effect.{Async, Ref}
 import cats.syntax.all._
-import org.github.insider.alchemy.repository.TradesRepository
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry, LeaderboardStrategy}
 import org.github.insider.polymarket.domain.Side
 import org.typelevel.log4cats.Logger
@@ -44,6 +43,7 @@ class Simulator[F[_]: Async](
     for {
       _                        <- logger.info(s"Starting processing of [$from, $to] range")
       trades                   <- simulationsRepository.getHistoricalTrades(from, to)
+      tradesNormalized = trades.map(trade => trade.copy(amount = trade.amount/1000000))
       maybeLatestBlockTimestamp = getLatestBlockTimestampFrom(trades)
       _                        <- logger.info(s"Trades fetched: ${trades.size}")
 
@@ -51,13 +51,13 @@ class Simulator[F[_]: Async](
       walletsPool <- walletsPoolRef.get
 
       walletsNel          = walletsPool.toNel
-      processedWalletsNel = walletsNel.map(wallet => processTrades(trades, wallet, leaderboard))
+      processedWalletsNel = walletsNel.map(wallet => processTrades(tradesNormalized, wallet, leaderboard)(config))
 
       updatedWalletsPool = WalletsPool.fromNel(processedWalletsNel)
 
       tokenResolutions <- tokenResolutionsRef.get
 
-      updatedTokenResolutions = updateTokenResolutions(trades, tokenResolutions)
+      updatedTokenResolutions = updateTokenResolutions(tradesNormalized, tokenResolutions)
       resolvedWalletsPool = updatedWalletsPool.resolveTokens(
         updatedTokenResolutions,
         maybeLatestBlockTimestamp,
@@ -143,7 +143,7 @@ class Simulator[F[_]: Async](
     trades: List[SimulationTrade],
     wallet: Wallet,
     leaderboard: Map[HexAddress, LeaderboardEntry],
-  ): Wallet = {
+  )(config: SimulationConfig): Wallet = {
     val tradesMatchesLeaderboard: List[(SimulationTrade, LeaderboardEntry)] =
       trades.flatMap(trade => leaderboard.get(HexAddress(trade.makerAddress)).map(entry => (trade, entry)))
     val updatedWallet: Wallet =
@@ -158,10 +158,7 @@ class Simulator[F[_]: Async](
                   amount                 = trade.amount,
                   totalPrice             = trade.totalPrice,
                   leaderboardEntry       = leaderboardEntry,
-                  blockNum               = trade.blockNum,
-                  extraBuyPerCents       = 2,
-                  allowedPerCentsPerUser = 10
-                )
+                )(config)
               maybeUpdatedWallet.getOrElse(currentWallet)
             case Side.Sell =>
               val maybeUpdatedWallet =
@@ -170,7 +167,6 @@ class Simulator[F[_]: Async](
                   leader     = HexAddress(trade.makerAddress),
                   amount     = trade.amount,
                   totalPrice = trade.totalPrice,
-                  blockNum   = trade.blockNum
                 )
 
               maybeUpdatedWallet.getOrElse(currentWallet)

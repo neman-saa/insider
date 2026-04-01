@@ -8,6 +8,7 @@ import org.github.insider.simulations.LeaderFollowingEntry.TokenOperation
 final case class LeaderFollowingEntry(
   leader: HexAddress,
   leaderFirstBuy: BigDecimal,
+  ourFirstPrice: BigDecimal,
   ourTotalPrice: BigDecimal,
   ourTotalPricePutIn: BigDecimal,
   allowedTotalPrice: BigDecimal,

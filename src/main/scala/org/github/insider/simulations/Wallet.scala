@@ -1,12 +1,9 @@
 package org.github.insider.simulations
 
-import cats.data.NonEmptyList
 import cats.effect.Sync
 import cats.effect.std.{Random, UUIDGen}
 import cats.syntax.all._
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry}
-import org.github.insider.polymarket.domain.Side.{Buy, Sell}
-import org.github.insider.simulations.LeaderFollowingEntry.TokenOperation
 
 import java.time.Instant
 import scala.math._
@@ -28,10 +25,7 @@ final case class Wallet(
     amount: BigDecimal,
     totalPrice: BigDecimal,
     leaderboardEntry: LeaderboardEntry,
-    blockNum: Int,
-    extraBuyPerCents: Int,
-    allowedPerCentsPerUser: Int
-  ): Option[Wallet] = {
+  )(config: SimulationConfig): Option[Wallet] = {
     tokens.get((leader, tokenId)) match {
       case None =>
         val singleTokenPrice = totalPrice / amount + 0.01
@@ -42,8 +36,8 @@ final case class Wallet(
             leaderboardEntry.totalLeaderboardScore *
             leaderboardEntry.totalLeaderboardSize *
             freeBalance *
-            extraBuyPerCents / 100
-        val allowedPrice = freeBalance * allowedPerCentsPerUser / 100
+            config.extraBuyPerCents / 100
+        val allowedPrice = freeBalance * config.allowedPerCentsPerUser / 100
 
         val ourFirstPricePutIn = ourFirstPrice min allowedPrice
         val leaderFollowingEntry = LeaderFollowingEntry(
@@ -51,28 +45,30 @@ final case class Wallet(
           totalPrice,
           ourFirstPrice,
           ourFirstPrice,
+          ourFirstPricePutIn,
           allowedPrice,
-          ourFirstPricePutIn * singleTokenPrice
+          ourFirstPricePutIn / singleTokenPrice
         )
         val newTokens        = tokens + ((leader, tokenId) -> leaderFollowingEntry)
-        val newFreeBalance   = freeBalance - freeBalance * allowedPerCentsPerUser / 100
-        val newLockedBalance = lockedBalance + freeBalance * (allowedPerCentsPerUser - extraBuyPerCents) / 100
+        val newFreeBalance   = freeBalance - allowedPrice
+        val newLockedBalance = lockedBalance + allowedPrice - ourFirstPricePutIn
         Some(this.copy(tokens = newTokens, freeBalance = newFreeBalance, lockedBalance = newLockedBalance))
 
       case Some(followingEntry) =>
-        val ourNewBuy          = followingEntry.allowedTotalPrice * followingEntry.leaderFirstBuy / totalPrice
+        val ourNewBuy          = followingEntry.ourFirstPrice * totalPrice / followingEntry.leaderFirstBuy
         val singleTokenPrice   = totalPrice / amount + 0.01
         val ourTotalPrice      = followingEntry.ourTotalPrice + ourNewBuy
         val ourTotalPricePutIn = ourTotalPrice min followingEntry.allowedTotalPrice
-        val ourAmount          = (ourTotalPricePutIn - followingEntry.ourTotalPricePutIn) * singleTokenPrice
-        val leaderOperation    = TokenOperation(Buy, amount, totalPrice / amount, blockNum)
+        val ourAmount =
+          followingEntry.ourAmount + (ourTotalPricePutIn - followingEntry.ourTotalPricePutIn) / singleTokenPrice
         val newEntry = LeaderFollowingEntry(
           leader,
           followingEntry.leaderFirstBuy,
+          followingEntry.ourFirstPrice,
           ourTotalPrice,
           ourTotalPricePutIn,
           followingEntry.allowedTotalPrice,
-          followingEntry.ourAmount + ourAmount
+          ourAmount
         )
         val newLockedBalance = lockedBalance - (ourTotalPricePutIn - followingEntry.ourTotalPricePutIn)
         Some(this.copy(tokens = tokens + ((leader, tokenId) -> newEntry), lockedBalance = newLockedBalance))
@@ -80,29 +76,25 @@ final case class Wallet(
   }
 
   /** Returns updated wallet if sell succeeds, otherwise returns None */
-  def copySell(
-    tokenId: String,
-    leader: HexAddress,
-    amount: BigDecimal,
-    totalPrice: BigDecimal,
-    blockNum: Int,
-  ): Option[Wallet] = {
+  def copySell(tokenId: String, leader: HexAddress, amount: BigDecimal, totalPrice: BigDecimal): Option[Wallet] = {
     tokens.get((leader, tokenId)) match {
       case None => None
       case Some(followingEntry) =>
-        val singleTokenPrice = totalPrice / amount - 0.01
-        val ourTotalPrice =
-          followingEntry.ourTotalPrice - followingEntry.leaderFirstBuy / totalPrice * followingEntry.allowedTotalPrice
+        val singleTokenPrice   = totalPrice / amount - 0.01
+        val ourPrice           = followingEntry.ourFirstPrice * totalPrice / followingEntry.leaderFirstBuy
+        val ourTotalPrice      = followingEntry.ourTotalPrice - ourPrice
         val ourTotalPricePutIn = ourTotalPrice min followingEntry.allowedTotalPrice
-        val ourAmount          = (ourTotalPricePutIn - ourTotalPrice) * singleTokenPrice
-        val newLockedBalance   = lockedBalance + ourTotalPricePutIn - ourTotalPrice
+        val ourAmount =
+          followingEntry.ourAmount - (followingEntry.ourTotalPricePutIn - ourTotalPricePutIn) / singleTokenPrice
+        val newLockedBalance = lockedBalance - ourTotalPricePutIn + followingEntry.ourTotalPricePutIn
         val entry = LeaderFollowingEntry(
           leader,
           followingEntry.leaderFirstBuy,
+          followingEntry.ourFirstPrice,
           ourTotalPrice,
           ourTotalPricePutIn,
           followingEntry.allowedTotalPrice,
-          followingEntry.ourAmount - ourAmount
+          ourAmount
         )
         Some(this.copy(tokens = tokens + ((leader, tokenId) -> entry), lockedBalance = newLockedBalance))
     }
@@ -131,15 +123,18 @@ final case class Wallet(
         leaderEntry.ourAmount * resolutionInfo.lastPrice // already normalized ???
     }.sum
 
-    val updatedTokensPortfolio: Map[(HexAddress, TokenId), LeaderFollowingEntry] =
-      tokensToBeRemoved.foldLeft(tokens) {
-        case (tokens0, (makerAddress, tokenId, _, _)) =>
-          tokens0.removed(makerAddress -> tokenId)
+    val (updatedTokensPortfolio: Map[(HexAddress, TokenId), LeaderFollowingEntry], newLockedBalance: BigDecimal) =
+      tokensToBeRemoved.foldLeft((tokens, lockedBalance)) {
+        case ((tokens0, lockedBalance), (makerAddress, tokenId, entry, _)) =>
+          val newLockedBalance = lockedBalance - entry.allowedTotalPrice + entry.ourTotalPricePutIn
+          val newTokens        = tokens0.removed(makerAddress -> tokenId)
+          (newTokens, newLockedBalance)
       }
 
+    val unlockedBalance = lockedBalance - newLockedBalance
     self.copy(
-      lockedBalance = if (lockProfit) self.lockedBalance + profit else self.lockedBalance,
-      freeBalance   = if (!lockProfit) self.freeBalance + profit else self.freeBalance,
+      lockedBalance = newLockedBalance,
+      freeBalance   = freeBalance + profit + unlockedBalance,
       tokens        = updatedTokensPortfolio,
     )
   }

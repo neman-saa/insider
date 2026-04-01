@@ -21,5 +21,8 @@ package object simulations {
     minWalletBlocksLifetime: Int,
     maxWalletBlocksLifetime: Int,
     maxTemporaryWalletsInPool: Int,
+    // buy sell processing
+    extraBuyPerCents: BigDecimal,
+    allowedPerCentsPerUser: BigDecimal
   )
 }
