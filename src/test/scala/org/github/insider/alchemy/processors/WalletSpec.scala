@@ -1,6 +1,6 @@
 package org.github.insider.alchemy.processors
 
-import org.github.insider.alchemy.processors.TransfersProcessorImplSpec.pureTest
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry}
 import org.github.insider.leaderboard.RoiNoTradersStrategyCh.RoiNoTradersEntry
 import org.github.insider.polymarket.domain.Side
@@ -191,9 +191,9 @@ object WalletSpec extends SimpleIOSuite {
   def processTrades(
     trades: List[SimulationTrade],
     wallet: Wallet,
-    leaderboard: Map[HexAddress, LeaderboardEntry],
+    leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
   )(config: SimulationConfig): Wallet = {
-    val tradesMatchesLeaderboard: List[(SimulationTrade, LeaderboardEntry)] =
+    val tradesMatchesLeaderboard: List[(SimulationTrade, AdvancedLeaderboardEntry)] =
       trades.flatMap(trade => leaderboard.get(HexAddress(trade.makerAddress)).map(entry => (trade, entry)))
     val updatedWallet: Wallet =
       tradesMatchesLeaderboard.foldLeft[Wallet](wallet) {

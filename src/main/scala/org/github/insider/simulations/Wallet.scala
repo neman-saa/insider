@@ -3,6 +3,7 @@ package org.github.insider.simulations
 import cats.effect.Sync
 import cats.effect.std.{Random, UUIDGen}
 import cats.syntax.all._
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry}
 
 import java.time.Instant
@@ -24,7 +25,7 @@ final case class Wallet(
     leader: HexAddress,
     amount: BigDecimal,
     totalPrice: BigDecimal,
-    leaderboardEntry: LeaderboardEntry,
+    leaderboardEntry: AdvancedLeaderboardEntry,
   )(config: SimulationConfig): Option[Wallet] = {
     tokens.get((leader, tokenId)) match {
       case None =>

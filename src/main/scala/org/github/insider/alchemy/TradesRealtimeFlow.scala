@@ -11,6 +11,7 @@ import org.github.insider.alchemy.domain.{AssetTransfer, User}
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
+import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
 import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.{Event, Side, Trade}
@@ -29,7 +30,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   aggregatedRepository: AggregatedTradesRepository[F],
   alchemyConfig: AlchemyConfig,
   tgBot: InsiderTelegramBot[F],
-  leaderboards: Leaderboards[F],
+  leaderboards: Leaderboards[F, SimpleLeaderboardEntry],
   eventsCached: EventsCached[F],
   followTokens: Ref[F, Map[String, Set[String]]],
 )(logger: Logger[F]) {
@@ -137,7 +138,7 @@ object TradesRealtimeFlow {
     aggregatedRepository: AggregatedTradesRepository[F],
     alchemyConfig: AlchemyConfig,
     tgBot: InsiderTelegramBot[F],
-    leaderboards: Leaderboards[F],
+    leaderboards: Leaderboards[F, SimpleLeaderboardEntry],
     eventsCached: EventsCached[F],
     followTokens: Ref[F, Map[String, Set[String]]],
   ): F[TradesRealtimeFlow[F]] =

@@ -12,13 +12,13 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
-class Leaderboards[F[_]: Async](
-  strategies: List[LeaderboardStrategy[F]],
-  cache: Cache[F, LeaderboardKeyName, Map[HexAddress, LeaderboardEntry]],
+class Leaderboards[F[_]: Async, Entry <: LeaderboardEntry](
+  strategies: List[LeaderboardStrategy[F, Entry]],
+  cache: Cache[F, LeaderboardKeyName, Map[HexAddress, Entry]],
   trades: TradesRepository[F]
 )(logger: Logger[F]) {
 
-  def find(address: HexAddress): F[List[(LeaderboardKeyName, LeaderboardEntry)]] =
+  def find(address: HexAddress): F[List[(LeaderboardKeyName, Entry)]] =
     strategies
       .traverse { strategy =>
         cache
@@ -35,24 +35,24 @@ class Leaderboards[F[_]: Async](
       }
       .map(_.flatten)
 
-  def getLeaderboard(leaderboardKeyName: LeaderboardKeyName): F[Option[Map[HexAddress, LeaderboardEntry]]] =
+  def getLeaderboard(leaderboardKeyName: LeaderboardKeyName): F[Option[Map[HexAddress, Entry]]] =
     cache.get(leaderboardKeyName)
 }
 
 object Leaderboards {
-  def make[F[_]: Async: Parallel](
-    strategies: List[LeaderboardStrategy[F]],
+  def make[F[_]: Async: Parallel, Entry <: LeaderboardEntry](
+    strategies: List[LeaderboardStrategy[F, Entry]],
     tradesRepository: TradesRepository[F]
-  ): Resource[F, Leaderboards[F]] = {
+  ): Resource[F, Leaderboards[F, Entry]] = {
     for {
       logger <- Resource.eval(Slf4jLogger.create[F])
       cache <- Cache
-        .expiring[F, LeaderboardKeyName, Map[HexAddress, LeaderboardEntry]](
+        .expiring[F, LeaderboardKeyName, Map[HexAddress, Entry]](
           config = ExpiringCache.Config(
             expireAfterRead  = 10.minutes,
             expireAfterWrite = Some(10.minutes),
           )
         )
-    } yield new Leaderboards[F](strategies, cache, tradesRepository)(logger)
+    } yield new Leaderboards[F, Entry](strategies, cache, tradesRepository)(logger)
   }
 }

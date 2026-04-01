@@ -5,14 +5,15 @@ import doobie.Transactor
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
+import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import org.github.insider.leaderboard.WinRateLeaderboardStrategyCH.WinRateLeaderboardEntry
 
-private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
+private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, SimpleLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Win Rate Leaderboard")
 
-  override def load(fromBlock: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+  override def load(fromBlock: Long, limit: Int): F[Map[HexAddress, SimpleLeaderboardEntry]] =
     query(limit)
       .query[(String, Int, Int)]
       .to[List]
@@ -22,9 +23,9 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
           .map {
             case ((makerAddress, win, lose), index) =>
               val address = HexAddress(makerAddress)
-              (address, WinRateLeaderboardEntry(address, list.size, index + 1, win, lose, 0, 0, 0, 0))
+              (address, WinRateLeaderboardEntry(address, list.size, index + 1, win, lose))
           }
-          .toMap[HexAddress, LeaderboardEntry]
+          .toMap[HexAddress, SimpleLeaderboardEntry]
       )
       .transact(transactor)
 
@@ -53,7 +54,7 @@ private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]
 
 object WinRateLeaderboardStrategyCH {
 
-  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F] =
+  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F, SimpleLeaderboardEntry] =
     new WinRateLeaderboardStrategyCH[F](transactor)
 
   final case class WinRateLeaderboardEntry(
@@ -62,11 +63,7 @@ object WinRateLeaderboardStrategyCH {
     rank: Int,
     win: Int,
     lose: Int,
-    score: BigDecimal,
-    avgBuy: BigDecimal,
-    numberOfEvents: Int,
-    totalLeaderboardScore: BigDecimal
-  ) extends LeaderboardEntry {
+  ) extends SimpleLeaderboardEntry {
     override def prettyPrint: String =
       s"rank - $rank/$totalLeaderboardSize, win - $win, lose - $lose"
   }

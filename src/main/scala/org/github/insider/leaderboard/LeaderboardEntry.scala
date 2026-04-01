@@ -4,12 +4,19 @@ trait LeaderboardEntry {
   def makerAddress: HexAddress
 
   def totalLeaderboardSize: Int
-  def totalLeaderboardScore: BigDecimal
   def rank: Int
 
   def prettyPrint: String
 
-  def score: BigDecimal
-  def numberOfEvents: Int
-  def avgBuy: BigDecimal
+
+}
+
+object LeaderboardEntry {
+  trait SimpleLeaderboardEntry extends LeaderboardEntry
+  trait AdvancedLeaderboardEntry extends LeaderboardEntry {
+    def score: BigDecimal
+    def numberOfEvents: Int
+    def avgBuy: BigDecimal
+    def totalLeaderboardScore: BigDecimal
+  }
 }

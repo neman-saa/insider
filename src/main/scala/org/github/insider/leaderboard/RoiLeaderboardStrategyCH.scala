@@ -6,15 +6,16 @@ import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.RoiLeaderboardStrategyCH.RoiLeaderboardEntry
 
 import java.time.Instant
 
-private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
+private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Total Profit Leaderboard")
 
-  override def load(block: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+  override def load(block: Long, limit: Int): F[Map[HexAddress, AdvancedLeaderboardEntry]] =
     queryWithDate(block, limit)
       .query[(String, BigDecimal, BigDecimal, BigDecimal, Int, BigDecimal)]
       .to[List]
@@ -39,7 +40,7 @@ private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) ex
                 )
               )
           }
-          .toMap[HexAddress, LeaderboardEntry]
+          .toMap[HexAddress, AdvancedLeaderboardEntry]
       )
       .transact(transactor)
 
@@ -121,7 +122,7 @@ private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) ex
 
 object RoiLeaderboardStrategyCH {
 
-  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F] =
+  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F, AdvancedLeaderboardEntry] =
     new RoiLeaderboardStrategyCH[F](transactor)
 
   final case class RoiLeaderboardEntry(
@@ -134,7 +135,7 @@ object RoiLeaderboardStrategyCH {
     totalLeaderboardScore: BigDecimal,
     numberOfEvents: Int,
     avgBuy: BigDecimal
-  ) extends LeaderboardEntry {
+  ) extends AdvancedLeaderboardEntry {
     override def prettyPrint: String =
       s"""
          |rank - $rank/$totalLeaderboardSize,

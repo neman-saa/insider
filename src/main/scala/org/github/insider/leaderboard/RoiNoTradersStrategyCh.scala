@@ -5,14 +5,15 @@ import doobie.Transactor
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import org.github.insider.leaderboard.RoiNoTradersStrategyCh.RoiNoTradersEntry
 
-private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F] {
+private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("roi-leaderboard-with-no-traders")
 
-  override def load(block: Long, limit: Int): F[Map[HexAddress, LeaderboardEntry]] =
+  override def load(block: Long, limit: Int): F[Map[HexAddress, AdvancedLeaderboardEntry]] =
     query(limit, block)
       .query[(String, BigDecimal, Int, BigDecimal, BigDecimal)]
       .to[List]
@@ -24,7 +25,7 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) exte
               val address = HexAddress(makerAddress)
               (address, RoiNoTradersEntry(address, list.length, index, roi, score, nEvents, avgBuy, list.map(_._4).sum))
           }
-          .toMap[HexAddress, LeaderboardEntry]
+          .toMap[HexAddress, AdvancedLeaderboardEntry]
       )
       .transact(transactor)
 
@@ -70,7 +71,7 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) exte
 
 object RoiNoTradersStrategyCh {
 
-  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F] =
+  def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F, AdvancedLeaderboardEntry] =
     new RoiNoTradersStrategyCh[F](transactor)
 
   final case class RoiNoTradersEntry(
@@ -82,7 +83,7 @@ object RoiNoTradersStrategyCh {
     numberOfEvents: Int,
     avgBuy: BigDecimal,
     totalLeaderboardScore: BigDecimal
-  ) extends LeaderboardEntry {
+  ) extends AdvancedLeaderboardEntry {
     override def prettyPrint: String =
       s"rank - $rank/$totalLeaderboardSize, roi - $roi, number of events - $numberOfEvents, avg buy - $avgBuy"
   }

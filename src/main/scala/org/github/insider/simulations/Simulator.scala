@@ -3,6 +3,7 @@ package org.github.insider.simulations
 import cats.data.NonEmptyList
 import cats.effect.{Async, Ref}
 import cats.syntax.all._
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry, LeaderboardStrategy}
 import org.github.insider.polymarket.domain.Side
 import org.typelevel.log4cats.Logger
@@ -11,10 +12,10 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import java.time.Instant
 
 class Simulator[F[_]: Async](
-  leaderboard: LeaderboardStrategy[F],
+  leaderboard: LeaderboardStrategy[F, AdvancedLeaderboardEntry],
   simulationsRepository: SimulationsRepository[F],
 )(
-  leaderboardRef: Ref[F, Map[HexAddress, LeaderboardEntry]],
+  leaderboardRef: Ref[F, Map[HexAddress, AdvancedLeaderboardEntry]],
   lastLeaderboardBlockRef: Ref[F, Int],
   tokenResolutionsRef: Ref[F, Map[TokenId, TokenResolutionInfo]],
 )(logger: Logger[F]) {
@@ -43,7 +44,7 @@ class Simulator[F[_]: Async](
     for {
       _                        <- logger.info(s"Starting processing of [$from, $to] range")
       trades                   <- simulationsRepository.getHistoricalTrades(from, to)
-      tradesNormalized = trades.map(trade => trade.copy(amount = trade.amount/1000000))
+      tradesNormalized          = trades.map(trade => trade.copy(amount = trade.amount / 1000000))
       maybeLatestBlockTimestamp = getLatestBlockTimestampFrom(trades)
       _                        <- logger.info(s"Trades fetched: ${trades.size}")
 
@@ -142,9 +143,9 @@ class Simulator[F[_]: Async](
   private def processTrades(
     trades: List[SimulationTrade],
     wallet: Wallet,
-    leaderboard: Map[HexAddress, LeaderboardEntry],
+    leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
   )(config: SimulationConfig): Wallet = {
-    val tradesMatchesLeaderboard: List[(SimulationTrade, LeaderboardEntry)] =
+    val tradesMatchesLeaderboard: List[(SimulationTrade, AdvancedLeaderboardEntry)] =
       trades.flatMap(trade => leaderboard.get(HexAddress(trade.makerAddress)).map(entry => (trade, entry)))
     val updatedWallet: Wallet =
       tradesMatchesLeaderboard.foldLeft[Wallet](wallet) {
@@ -153,11 +154,11 @@ class Simulator[F[_]: Async](
             case Side.Buy =>
               val maybeUpdatedWallet =
                 currentWallet.copyBuy(
-                  tokenId                = trade.tokenId,
-                  leader                 = HexAddress(trade.makerAddress),
-                  amount                 = trade.amount,
-                  totalPrice             = trade.totalPrice,
-                  leaderboardEntry       = leaderboardEntry,
+                  tokenId          = trade.tokenId,
+                  leader           = HexAddress(trade.makerAddress),
+                  amount           = trade.amount,
+                  totalPrice       = trade.totalPrice,
+                  leaderboardEntry = leaderboardEntry,
                 )(config)
               maybeUpdatedWallet.getOrElse(currentWallet)
             case Side.Sell =>
@@ -179,12 +180,12 @@ class Simulator[F[_]: Async](
 
 object Simulator {
   def of[F[_]: Async](
-    leaderboard: LeaderboardStrategy[F],
+    leaderboard: LeaderboardStrategy[F, AdvancedLeaderboardEntry],
     walletsRepository: SimulationsRepository[F],
   ): F[Simulator[F]] =
     for {
       logger                  <- Slf4jLogger.create[F]
-      leaderboardRef          <- Ref.of[F, Map[HexAddress, LeaderboardEntry]](Map.empty)
+      leaderboardRef          <- Ref.of[F, Map[HexAddress, AdvancedLeaderboardEntry]](Map.empty)
       lastLeaderboardBlockRef <- Ref.of[F, Int](-1)
       tokenResolutionsRef     <- Ref.of[F, Map[TokenId, TokenResolutionInfo]](Map.empty)
     } yield new Simulator[F](leaderboard, walletsRepository)(
