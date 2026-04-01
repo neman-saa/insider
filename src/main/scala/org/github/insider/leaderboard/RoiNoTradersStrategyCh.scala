@@ -63,6 +63,7 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) exte
         |     sumIf(total_price, side = 'BUY') -
         |     sumIf(total_price, side = 'SELL')
         |   ) != 0
+        |ORDER BY score
         |LIMIT $limit
       """.stripMargin
 }
