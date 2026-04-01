@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS events
 (
     id Nullable(String),
@@ -6,8 +7,8 @@ CREATE TABLE IF NOT EXISTS events
     created_at Nullable(DateTime64(6)),
     closed_time Nullable(DateTime64(6)),
     tags Array(Nullable(String)),
-    star_date Nullable(DateTime64(6)),
-    end_date Nullable(DateTime64(6)),
+    startDate Nullable(DateTime64(6)),
+    endDate Nullable(DateTime64(6)),
     slug Nullable(String),
     closed Nullable(Bool)
 )
@@ -25,8 +26,8 @@ CREATE TABLE IF NOT EXISTS markets
     closed_time Nullable(DateTime64(6)),
     event_id Nullable(String),
     volume Nullable(Decimal(38, 9)),
-    start_date Nullable(DateTime64(6)),
-    end_date Nullable(DateTime64(6))
+    startDate Nullable(DateTime64(6)),
+    endDate Nullable(DateTime64(6))
 )
 ENGINE = MergeTree()
 ORDER BY id
