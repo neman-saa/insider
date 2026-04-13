@@ -5,9 +5,11 @@ import java.time.Instant
 package object simulations {
   type TokenId = String
 
-  final case class TokenResolutionInfo(
+  final case class TokenInfo(
+    price: BigDecimal,
     lastPrice: BigDecimal,
-    resolveDate: Instant
+    resolveDate: Instant,
+    score: BigDecimal
   )
 
   final case class SimulationConfig(
@@ -15,14 +17,11 @@ package object simulations {
     blocksProcessingBatchSize: Int,
     // leaderboard
     leaderboardLimit: Int,
-    leaderboardBlocksLifetime: Int,
+    leaderboardSecondsLifetime: Int,
     // wallets
     initialWalletBalance: BigDecimal,
     minWalletBlocksLifetime: Int,
     maxWalletBlocksLifetime: Int,
     maxTemporaryWalletsInPool: Int,
-    // buy sell processing
-    extraBuyPerCents: BigDecimal,
-    allowedPerCentsPerUser: BigDecimal
   )
 }

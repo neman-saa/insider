@@ -10,17 +10,26 @@ import cats.syntax.all._
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import java.time.Instant
+
 class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logger[F]) {
 
-  def getHistoricalTrades(from: Int, to: Int): F[List[SimulationTrade]] =
+  def getHistoricalTrades(simulationStart: Int, from: Int, to: Int): F[List[SimulationTrade]] =
     sql"""
          |select * from trades_simulations
          |where block_num > $from
          |and block_num < $to
+         |and start_time > $simulationStart
          |"""
       .stripMargin
       .query[SimulationTrade]
       .to[List]
+      .transact(transactor)
+
+  def timestampByBlockNum(blockNum: Int): F[Instant] =
+    sql"select min(block_timestamp) from trades_simulations where block_num > $blockNum"
+      .query[Instant]
+      .unique
       .transact(transactor)
 
   def insertWallets(wallets: NonEmptyList[Wallet]): F[Unit] =
@@ -36,7 +45,7 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
           |INSERT INTO wallets (
           |   wallet_id, 
           |   initial_balance, 
-          |   free_balance, 
+          |   final_balance,
           |   locked_balance, 
           |   active_from_block, 
           |   active_to_block, 
@@ -48,8 +57,7 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
                         |(
                         |   ${wallet.id},
                         |   ${wallet.initialBalance},
-                        |   ${wallet.freeBalance},
-                        |   ${wallet.lockedBalance},
+                        |   ${wallet.currentBalance},
                         |   ${wallet.activeFromBlock},
                         |   ${wallet.activeToBlock.getOrElse(-1)},
                         |   now()

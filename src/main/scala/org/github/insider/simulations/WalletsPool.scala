@@ -9,7 +9,7 @@ final case class WalletsPool(
   temporary: List[Wallet],
 ) { self =>
 
-  def resolveTokens(tokenResolutions: Map[TokenId, TokenResolutionInfo]): WalletsPool = {
+  def resolveTokens(tokenResolutions: Map[TokenId, BigDecimal]): WalletsPool = {
     val walletsNel: NonEmptyList[Wallet] = self.toNel
     val resolvedWallets: NonEmptyList[Wallet] =
       walletsNel.map(wallet => wallet.resolveTokens(tokenResolutions))
@@ -17,7 +17,7 @@ final case class WalletsPool(
   }
 
   def removeExpiredWallets(
-    tokenResolutions: Map[TokenId, TokenResolutionInfo],
+    tokensCurrentPrices: Map[TokenId, BigDecimal],
     currentBlock: Int,
     sellActiveTokensAtResolutionPrice: Boolean,
   ): (WalletsPool, List[Wallet]) = {
@@ -25,7 +25,7 @@ final case class WalletsPool(
       self.temporary.partition(wallet => wallet.activeToBlock.exists(activeTo => activeTo > currentBlock))
     val resolvedExpiredWallets: List[Wallet] =
       if (sellActiveTokensAtResolutionPrice)
-        expiredWallets.map(wallet => wallet.resolveTokens(tokenResolutions))
+        expiredWallets.map(wallet => wallet.prepareForPersist(tokensCurrentPrices))
       else expiredWallets
     (self.copy(temporary = remainedWallets), resolvedExpiredWallets)
   }

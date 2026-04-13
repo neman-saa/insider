@@ -8,6 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "insider",
     libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-mtl" % "1.4.0",
       catsEffect,
       pureConfig,
       logger,

@@ -3,144 +3,94 @@ package org.github.insider.simulations
 import cats.effect.Sync
 import cats.effect.std.{Random, UUIDGen}
 import cats.syntax.all._
-import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
-import org.github.insider.leaderboard.{HexAddress, LeaderboardEntry}
-
-import java.time.Instant
+import org.github.insider.polymarket.domain.Position
 import scala.math._
 
 final case class Wallet(
   id: String,
   initialBalance: BigDecimal,
-  lockedBalance: BigDecimal,
-  freeBalance: BigDecimal,
-  tokens: Map[(HexAddress, String), LeaderFollowingEntry],
+  currentBalance: BigDecimal,
+  positions: List[Position],
   activeFromBlock: Int,
   activeToBlock: Option[Int],
 ) { self =>
 
   /** Returns updated wallet if buy succeeds, otherwise returns None */
-  def copyBuy(
-    tokenId: String,
-    leader: HexAddress,
-    amount: BigDecimal,
-    totalPrice: BigDecimal,
-    leaderboardEntry: AdvancedLeaderboardEntry,
-  )(config: SimulationConfig): Option[Wallet] = {
-    tokens.get((leader, tokenId)) match {
-      case None =>
-        val singleTokenPrice = totalPrice / amount + 0.01
-        val ourFirstPrice =
-            leaderboardEntry.score /
-              (leaderboardEntry.totalLeaderboardScore / leaderboardEntry.totalLeaderboardSize) *
-            freeBalance *
-            config.extraBuyPerCents / 100
-        val allowedPrice = freeBalance * config.allowedPerCentsPerUser / 100
+  def updatePositions(
+    topAssets: Map[TokenId, BigDecimal],
+    /** Tokens that should be bought by the given price */
+    assetsInfos: Map[TokenId, BigDecimal]
+    /**
+      * Info about all tokens that are not resolved, needed to sell not important tokens. Always will have info about
+      * wallet positions
+      */
+  ): Wallet = {
+    val (toBeRemoved, toBeRemained) = positions.partition(pos => !topAssets.contains(pos.asset))
+    val newBalance = currentBalance + toBeRemoved.foldLeft(BigDecimal(0))((balance, position) =>
+      balance + position.size * assetsInfos(position.asset)
+    )
 
-        val ourFirstPricePutIn = ourFirstPrice min allowedPrice
-        val leaderFollowingEntry = LeaderFollowingEntry(
-          leader,
-          totalPrice,
-          ourFirstPrice,
-          ourFirstPrice,
-          ourFirstPricePutIn,
-          allowedPrice,
-          ourFirstPricePutIn / singleTokenPrice
-        )
-        val newTokens        = tokens + ((leader, tokenId) -> leaderFollowingEntry)
-        val newFreeBalance   = freeBalance - allowedPrice
-        val newLockedBalance = lockedBalance + allowedPrice - ourFirstPricePutIn
-        Some(this.copy(tokens = newTokens, freeBalance = newFreeBalance, lockedBalance = newLockedBalance))
-
-      case Some(followingEntry) =>
-        val ourNewBuy          = followingEntry.ourFirstPrice * totalPrice / followingEntry.leaderFirstBuy
-        val singleTokenPrice   = totalPrice / amount + 0.01
-        val ourTotalPrice      = followingEntry.ourTotalPrice + ourNewBuy
-        val ourTotalPricePutIn = ourTotalPrice min followingEntry.allowedTotalPrice
-        val ourAmount =
-          followingEntry.ourAmount + (ourTotalPricePutIn - followingEntry.ourTotalPricePutIn) / singleTokenPrice
-        val newEntry = LeaderFollowingEntry(
-          leader,
-          followingEntry.leaderFirstBuy,
-          followingEntry.ourFirstPrice,
-          ourTotalPrice,
-          ourTotalPricePutIn,
-          followingEntry.allowedTotalPrice,
-          ourAmount
-        )
-        val newLockedBalance = lockedBalance - (ourTotalPricePutIn - followingEntry.ourTotalPricePutIn)
-        Some(this.copy(tokens = tokens + ((leader, tokenId) -> newEntry), lockedBalance = newLockedBalance))
+    val toBeBought = assetsInfos -- positions.map(_.asset)
+    val newPositions = toBeBought.map {
+      case (asset, tokenPrice) => Position(asset, newBalance / toBeBought.size / tokenPrice)
     }
+    self.copy(
+      positions      = toBeRemained ++ newPositions,
+      currentBalance = 0
+    )
   }
 
   /** Returns updated wallet if sell succeeds, otherwise returns None */
-  def copySell(tokenId: String, leader: HexAddress, amount: BigDecimal, totalPrice: BigDecimal): Option[Wallet] = {
-    tokens.get((leader, tokenId)) match {
-      case None => None
-      case Some(followingEntry) =>
-        val singleTokenPrice   = totalPrice / amount - 0.01
-        val ourPrice           = followingEntry.ourFirstPrice * totalPrice / followingEntry.leaderFirstBuy
-        val ourTotalPrice      = followingEntry.ourTotalPrice - ourPrice
-        val ourTotalPricePutIn = ourTotalPrice min followingEntry.allowedTotalPrice
-        val ourAmount =
-          followingEntry.ourAmount - (followingEntry.ourTotalPricePutIn - ourTotalPricePutIn) / singleTokenPrice
-        val newLockedBalance = lockedBalance - ourTotalPricePutIn + followingEntry.ourTotalPricePutIn
-        val entry = LeaderFollowingEntry(
-          leader,
-          followingEntry.leaderFirstBuy,
-          followingEntry.ourFirstPrice,
-          ourTotalPrice,
-          ourTotalPricePutIn,
-          followingEntry.allowedTotalPrice,
-          ourAmount
-        )
-        Some(this.copy(tokens = tokens + ((leader, tokenId) -> entry), lockedBalance = newLockedBalance))
-    }
-  }
 
-  def resolveTokens(tokenResolutions: Map[TokenId, TokenResolutionInfo]): Wallet = {
-    val tokensToBeRemoved: List[(HexAddress, TokenId, LeaderFollowingEntry, TokenResolutionInfo)] =
-      tokens.toList.collect {
-        case ((makerAddress, tokenId), followingEntry) if tokenResolutions.contains(tokenId) =>
-          (makerAddress, tokenId, followingEntry, tokenResolutions(tokenId))
-      }
-    val profit: BigDecimal = tokensToBeRemoved.map {
-      case (_, _, leaderEntry, resolutionInfo) =>
-        leaderEntry.ourAmount * resolutionInfo.lastPrice // already normalized ???
+  def resolveTokens(tokenLastPrices: Map[TokenId, BigDecimal]): Wallet = {
+    val (tokensToBeRemoved, remainingPositions) =
+      positions.partition(position => tokenLastPrices.contains(position.asset))
+    val addToBalance: BigDecimal = tokensToBeRemoved.map {
+      case Position(asset, size) =>
+        size * tokenLastPrices(asset) // already normalized ???
     }.sum
 
-    val (updatedTokensPortfolio: Map[(HexAddress, TokenId), LeaderFollowingEntry], newLockedBalance: BigDecimal) =
-      tokensToBeRemoved.foldLeft((tokens, lockedBalance)) {
-        case ((tokens0, lockedBalance), (makerAddress, tokenId, entry, _)) =>
-          val newLockedBalance = lockedBalance - entry.allowedTotalPrice + entry.ourTotalPricePutIn
-          val newTokens        = tokens0.removed(makerAddress -> tokenId)
-          (newTokens, newLockedBalance)
-      }
-
-    val unlockedBalance = lockedBalance - newLockedBalance
     self.copy(
-      lockedBalance = newLockedBalance,
-      freeBalance   = freeBalance + profit + unlockedBalance,
-      tokens        = updatedTokensPortfolio,
+      positions      = remainingPositions,
+      currentBalance = currentBalance + addToBalance
     )
   }
+
+  def prepareForPersist(tokenCurrentPrices: Map[TokenId, BigDecimal]): Wallet = {
+    val balance = positions.foldLeft(BigDecimal(0)) {
+      case (balance, position) =>
+        balance + position.size*tokenCurrentPrices(position.asset)
+    }
+
+    self.copy(
+      currentBalance = currentBalance + balance,
+      positions      = Nil
+    )
+  }
+
 }
 
 object Wallet {
   final val PrimaryWalletId = "PRIMARY WALLET ID"
 
-  def initWith(balance: BigDecimal, activeFromBlock: Int, activeToBlock: Option[Int], id: String): Wallet =
+  def initWith(
+    balance: BigDecimal,
+    activeFromBlock: Int,
+    activeToBlock: Option[Int],
+    id: String
+  ): Wallet =
     Wallet(
       id              = id,
       initialBalance  = balance,
-      lockedBalance   = BigDecimal(0),
-      freeBalance     = balance,
-      tokens          = Map.empty,
+      currentBalance  = balance,
+      positions       = Nil,
       activeFromBlock = activeFromBlock,
       activeToBlock   = activeToBlock,
     )
 
-  def genWithRandomExpiration[F[_]: Sync](activeFromBlock: Int)(config: SimulationConfig): F[Wallet] = {
+  def genWithRandomExpiration[F[_]: Sync](activeFromBlock: Int)(
+    config: SimulationConfig
+  ): F[Wallet] = {
     for {
       random <- Random.scalaUtilRandom[F]
       activeToBlock <- random.betweenInt(
