@@ -14,12 +14,11 @@ import java.time.Instant
 
 class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logger[F]) {
 
-  def getHistoricalTrades(simulationStart: Int, from: Int, to: Int): F[List[SimulationTrade]] =
+  def getHistoricalTrades(from: Int, to: Int): F[List[SimulationTrade]] =
     sql"""
          |select * from trades_simulations
          |where block_num > $from
          |and block_num < $to
-         |and start_time > $simulationStart
          |"""
       .stripMargin
       .query[SimulationTrade]
@@ -42,12 +41,11 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
   private def createQuery(wallets: List[Wallet]): Fragment = {
     val insert =
       fr"""
-          |INSERT INTO wallets (
+          |INSERT INTO wallets2 (
           |   wallet_id, 
           |   initial_balance, 
           |   final_balance,
-          |   locked_balance, 
-          |   active_from_block, 
+          |   active_from_block,
           |   active_to_block, 
           |   insert_time
           |) VALUES

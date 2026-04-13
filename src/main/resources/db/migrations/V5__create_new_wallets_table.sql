@@ -9,3 +9,4 @@ CREATE TABLE IF NOT EXISTS wallets2
 )
 ENGINE = MergeTree
 ORDER BY (active_from_block);
+

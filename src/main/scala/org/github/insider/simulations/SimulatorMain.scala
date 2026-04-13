@@ -19,7 +19,7 @@ object SimulatorMain extends IOApp.Simple {
     SimulationConfig(
       blocksProcessingBatchSize = 1000,
       leaderboardLimit          = 1000,
-      leaderboardSecondsLifetime = 3600 * 24,
+      leaderboardBlocksLifetime = 3600 * 24 / 2,
       initialWalletBalance      = 1000,
       minWalletBlocksLifetime   = 60_000,
       maxWalletBlocksLifetime   = 200_000,

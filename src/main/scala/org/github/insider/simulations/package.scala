@@ -13,15 +13,15 @@ package object simulations {
   )
 
   final case class SimulationConfig(
-    // simulation flow
-    blocksProcessingBatchSize: Int,
-    // leaderboard
-    leaderboardLimit: Int,
-    leaderboardSecondsLifetime: Int,
-    // wallets
-    initialWalletBalance: BigDecimal,
-    minWalletBlocksLifetime: Int,
-    maxWalletBlocksLifetime: Int,
-    maxTemporaryWalletsInPool: Int,
+                                     // simulation flow
+                                     blocksProcessingBatchSize: Int,
+                                     // leaderboard
+                                     leaderboardLimit: Int,
+                                     leaderboardBlocksLifetime: Int,
+                                     // wallets
+                                     initialWalletBalance: BigDecimal,
+                                     minWalletBlocksLifetime: Int,
+                                     maxWalletBlocksLifetime: Int,
+                                     maxTemporaryWalletsInPool: Int,
   )
 }

@@ -17,6 +17,30 @@ CREATE TABLE IF NOT EXISTS trades_simulations
 ENGINE = MergeTree
 ORDER BY (block_num, tx_index, maker_address);
 
+CREATE TABLE IF NOT EXISTS token_opposites
+(
+    token_id          String,
+    opposite_token_id String
+)
+ENGINE = MergeTree
+ORDER BY token_id;
+
+INSERT INTO token_opposites
+SELECT
+    t.id AS token_id,
+    if(arr[1] = t.id, arr[2], arr[1]) AS opposite_token_id
+FROM tokens t
+JOIN
+(
+    SELECT
+        market_id,
+        groupArray(id) AS arr
+    FROM tokens
+    GROUP BY market_id
+    HAVING length(arr) = 2
+) x
+    ON x.market_id = t.market_id;
+
 INSERT INTO trades_simulations
 SELECT
     tr.block_timestamp,
@@ -24,7 +48,7 @@ SELECT
     tr.tx_index,
     tr.maker_address,
     tr.token_id,
-    t_opposite.id AS opposite_token_id,
+    opp.opposite_token_id,
     tr.side,
     tr.amount,
     tr.total_price,
@@ -37,8 +61,9 @@ JOIN tokens t
     ON t.id = tr.token_id
 JOIN markets m
     ON m.id = t.market_id
-JOIN tokens t_opposite
-    ON t_opposite.market_id = t.market_id
-   AND t_opposite.id != t.id
+JOIN token_opposites opp
+    ON opp.token_id = tr.token_id
 WHERE tr.block_num IS NOT NULL
-  AND tr.tx_index IS NOT NULL;
+  AND tr.tx_index IS NOT NULL
+  AND tr.block_timestamp IS NOT NULL
+  AND cityHash64(tr.maker_address, tr.token_id) % 16 = 0;

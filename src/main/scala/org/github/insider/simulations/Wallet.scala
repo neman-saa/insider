@@ -29,15 +29,23 @@ final case class Wallet(
     val newBalance = currentBalance + toBeRemoved.foldLeft(BigDecimal(0))((balance, position) =>
       balance + position.size * assetsInfos(position.asset)
     )
+    if(toBeRemained.map(_.asset).toSet == topAssets.keySet && toBeRemoved.isEmpty) self
+    else {
+      val buyPerToken = newBalance / (10 - toBeRemained.length)
 
-    val toBeBought = assetsInfos -- positions.map(_.asset)
-    val newPositions = toBeBought.map {
-      case (asset, tokenPrice) => Position(asset, newBalance / toBeBought.size / tokenPrice)
+      val toBeBought  = topAssets -- toBeRemained.map(_.asset)
+      val newPositions = toBeBought.map {
+        case (asset, tokenPrice) => Position(asset, buyPerToken / tokenPrice)
+      }
+
+      val buyCost  = toBeBought.size * buyPerToken
+      val remained = newBalance - buyCost
+      self.copy(
+        positions      = toBeRemained ++ newPositions,
+        currentBalance = remained
+      )
     }
-    self.copy(
-      positions      = toBeRemained ++ newPositions,
-      currentBalance = 0
-    )
+
   }
 
   /** Returns updated wallet if sell succeeds, otherwise returns None */
@@ -59,7 +67,7 @@ final case class Wallet(
   def prepareForPersist(tokenCurrentPrices: Map[TokenId, BigDecimal]): Wallet = {
     val balance = positions.foldLeft(BigDecimal(0)) {
       case (balance, position) =>
-        balance + position.size*tokenCurrentPrices(position.asset)
+        balance + position.size * tokenCurrentPrices(position.asset)
     }
 
     self.copy(

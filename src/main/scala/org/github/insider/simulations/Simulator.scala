@@ -17,7 +17,7 @@ class Simulator[F[_]: Async](
   simulationsRepository: SimulationsRepository[F],
 )(
   leaderboardRef: Ref[F, Map[HexAddress, AdvancedLeaderboardEntry]],
-  lastLeaderboardUpdateRef: Ref[F, Instant],
+  lastLeaderboardUpdateRef: Ref[F, Int],
   currentTimeRef: Ref[F, Instant],
   tokenInfosRef: Ref[F, Map[TokenId, TokenInfo]],
 )(logger: Logger[F]) {
@@ -25,28 +25,33 @@ class Simulator[F[_]: Async](
   def start(start: Int, end: Int)(config: SimulationConfig): F[Unit] = {
     for {
       currentTime <- simulationsRepository.timestampByBlockNum(start)
+      _           <- currentTimeRef.set(currentTime)
+      _           <- logger.info("Started load leaderboard")
       leaderboard <- leaderboard.load(start, limit = config.leaderboardLimit)
+      _           <- logger.info(s"leaderboard length = ${leaderboard.size}")
       _           <- leaderboardRef.set(leaderboard)
-      _           <- lastLeaderboardUpdateRef.set(currentTime)
+      _           <- lastLeaderboardUpdateRef.set(start)
 
       primaryWallet   = Wallet.initWith(config.initialWalletBalance, start, None, Wallet.PrimaryWalletId)
       walletsPoolRef <- Ref.of[F, WalletsPool](WalletsPool.initWithPrimary(primaryWallet))
 
-      ranges = (start to end).grouped(config.blocksProcessingBatchSize).toList
-      _     <- ranges.traverse_(range => processRange(start, range.start, range.end)(walletsPoolRef, config))
-
+      ranges      = (start to end).grouped(config.blocksProcessingBatchSize).toList
+      _          <- ranges.traverse_(range => processRange(range.start, range.end)(walletsPoolRef, config))
+      tokenInfos <- tokenInfosRef.get
       updatedPrimaryWallet <- walletsPoolRef.get.map(_.primary)
-      _                    <- simulationsRepository.insertWallets(NonEmptyList.of(updatedPrimaryWallet))
+      _ <- simulationsRepository.insertWallets(
+        NonEmptyList.of(updatedPrimaryWallet.prepareForPersist(tokenInfos.view.mapValues(_.price).toMap))
+      )
     } yield ()
   }
 
-  private def processRange(simulationStart: Int, from: Int, to: Int)(
+  private def processRange(from: Int, to: Int)(
     walletsPoolRef: Ref[F, WalletsPool],
     config: SimulationConfig,
   ): F[Unit] =
     for {
       _                        <- logger.info(s"Starting processing of [$from, $to] range")
-      trades                   <- simulationsRepository.getHistoricalTrades(simulationStart, from, to)
+      trades                   <- simulationsRepository.getHistoricalTrades(from, to)
       tradesNormalized          = trades.map(trade => trade.copy(amount = trade.amount / 1000000))
       maybeLatestBlockTimestamp = getLatestBlockTimestampFrom(trades)
       _                        <- logger.info(s"Trades fetched: ${trades.size}")
@@ -54,9 +59,9 @@ class Simulator[F[_]: Async](
       leaderboard              <- leaderboardRef.get
       walletsPool              <- walletsPoolRef.get
       tokenInfos               <- tokenInfosRef.get
-
-      updatedTokenInfos = updateTokenInfos(tradesNormalized, tokenInfos, leaderboard)
-      topTokens         = findTopTokens(updatedTokenInfos, currentTime)
+      filteredTrades            = tradesNormalized.filter(trade => leaderboard.contains(HexAddress(trade.makerAddress)))
+      updatedTokenInfos         = updateTokenInfos(filteredTrades, tokenInfos, leaderboard)
+      topTokens                 = findTopTokens(updatedTokenInfos, currentTime)
 
       walletsNel = walletsPool.toNel
       processedWalletsNel = walletsNel.map(wallet =>
@@ -83,7 +88,7 @@ class Simulator[F[_]: Async](
       _              <- walletsPoolRef.set(nextWalletsPool)
       _              <- logger.info(s"Temporary wallets in pool: + ${nextWalletsPool.temporary.size}")
 
-      _ <- maybeReloadLeaderboard(maybeLatestBlockTimestamp.getOrElse(currentTime), currentBlock = to)(config)
+      _ <- maybeReloadLeaderboard(currentBlock = to)(config)
       _ <- currentTimeRef.set(maybeLatestBlockTimestamp.getOrElse(currentTime))
     } yield ()
 
@@ -112,11 +117,14 @@ class Simulator[F[_]: Async](
             case Buy  => 1
             case Sell => -1
           })
+        val tokenScore =
+          tokenScores
+            .get(
+              trade.tokenId
+            )
+            .map(_.score)
         val tokenInfo =
-          tokenScores.getOrElse(
-            trade.tokenId,
-            TokenInfo(trade.totalPrice / trade.amount, trade.lastPrice, trade.closedTime, 0)
-          )
+          TokenInfo(trade.totalPrice / trade.amount, trade.lastPrice, trade.closedTime, tokenScore.getOrElse(0))
         val oppositeTokenInfo =
           tokenScores.getOrElse(
             trade.oppositeTokenId,
@@ -159,7 +167,7 @@ class Simulator[F[_]: Async](
           tokenId -> (tokenInfo.price, efficiency)
       }
       .toList
-      .sortBy(_._2._2)
+      .sortBy(-_._2._2)
       .take(10)
       .filter(_._2._2 > 0)
       .map { case (tokenId, (price, _)) => tokenId -> price }
@@ -176,13 +184,13 @@ class Simulator[F[_]: Async](
     }
   }
 
-  private def maybeReloadLeaderboard(currentTime: Instant, currentBlock: Int)(config: SimulationConfig): F[Unit] =
+  private def maybeReloadLeaderboard(currentBlock: Int)(config: SimulationConfig): F[Unit] =
     lastLeaderboardUpdateRef.get.flatMap { lastLeaderboardBlock =>
-      if (currentTime.getEpochSecond - lastLeaderboardBlock.getEpochSecond >= config.leaderboardSecondsLifetime) {
+      if (currentBlock - lastLeaderboardBlock >= config.leaderboardBlocksLifetime) {
         for {
           leaderboard <- leaderboard.load(currentBlock, limit = config.leaderboardLimit)
           _           <- leaderboardRef.set(leaderboard)
-          _           <- lastLeaderboardUpdateRef.set(currentTime)
+          _           <- lastLeaderboardUpdateRef.set(currentBlock)
         } yield ()
       } else Async[F].unit
     }
@@ -197,7 +205,7 @@ object Simulator {
     for {
       logger                  <- Slf4jLogger.create[F]
       leaderboardRef          <- Ref.of[F, Map[HexAddress, AdvancedLeaderboardEntry]](Map.empty)
-      lastLeaderboardBlockRef <- Ref.of[F, Instant](Instant.now)
+      lastLeaderboardBlockRef <- Ref.of[F, Int](-1)
       tokenResolutionsRef     <- Ref.of[F, Map[TokenId, TokenInfo]](Map.empty)
       currentTimeRef          <- Ref.of[F, Instant](Instant.now)
     } yield new Simulator[F](leaderboard, walletsRepository)(
