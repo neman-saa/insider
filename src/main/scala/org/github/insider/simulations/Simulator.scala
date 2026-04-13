@@ -35,9 +35,9 @@ class Simulator[F[_]: Async](
       primaryWallet   = Wallet.initWith(config.initialWalletBalance, start, None, Wallet.PrimaryWalletId)
       walletsPoolRef <- Ref.of[F, WalletsPool](WalletsPool.initWithPrimary(primaryWallet))
 
-      ranges      = (start to end).grouped(config.blocksProcessingBatchSize).toList
-      _          <- ranges.traverse_(range => processRange(range.start, range.end)(walletsPoolRef, config))
-      tokenInfos <- tokenInfosRef.get
+      ranges                = (start to end).grouped(config.blocksProcessingBatchSize).toList
+      _                    <- ranges.traverse_(range => processRange(range.start, range.end)(walletsPoolRef, config))
+      tokenInfos           <- tokenInfosRef.get
       updatedPrimaryWallet <- walletsPoolRef.get.map(_.primary)
       _ <- simulationsRepository.insertWallets(
         NonEmptyList.of(updatedPrimaryWallet.prepareForPersist(tokenInfos.view.mapValues(_.price).toMap))
@@ -159,17 +159,18 @@ class Simulator[F[_]: Async](
     tokenInfos
       .map {
         case (tokenId, tokenInfo) =>
+          val timeToResolve =
+            (tokenInfo.resolveDate.getEpochSecond - currentTime.getEpochSecond).max(1)
+
           val efficiency =
-            (1 - tokenInfo.price) * tokenInfo.score / (tokenInfo
-              .resolveDate
-              .getEpochSecond - currentTime.getEpochSecond).min(1)
+            (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
           tokenId -> (tokenInfo.price, efficiency)
       }
       .toList
+      .filter(_._2._2 > 0)
       .sortBy(-_._2._2)
       .take(10)
-      .filter(_._2._2 > 0)
       .map { case (tokenId, (price, _)) => tokenId -> price }
       .toMap
 
