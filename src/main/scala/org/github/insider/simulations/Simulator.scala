@@ -61,7 +61,7 @@ class Simulator[F[_]: Async](
       tokenInfos               <- tokenInfosRef.get
       filteredTrades            = tradesNormalized.filter(trade => leaderboard.contains(HexAddress(trade.makerAddress)))
       updatedTokenInfos         = updateTokenInfos(filteredTrades, tokenInfos, leaderboard)
-      topTokens                 = findTopTokens(updatedTokenInfos, currentTime)
+      topTokens                 = findTopTokens(updatedTokenInfos, maybeLatestBlockTimestamp.getOrElse(currentTime))
 
       walletsNel = walletsPool.toNel
       processedWalletsNel = walletsNel.map(wallet =>
@@ -90,6 +90,13 @@ class Simulator[F[_]: Async](
 
       _ <- maybeReloadLeaderboard(currentBlock = to)(config)
       _ <- currentTimeRef.set(maybeLatestBlockTimestamp.getOrElse(currentTime))
+      _ <- logger.info(
+        s"Current balance: ${processedWalletsNel.head.prepareForPersist(updatedTokenInfos.view.mapValues(_.price).toMap).currentBalance}"
+        // Если будешь смотреть, то тут очень странная херь, буквально за тыщу блоков с 1300 до 200 падает баланс и потом экспоненциально падает
+      )
+      _ <- logger.info(
+        s"Current tokens sum: ${processedWalletsNel.head.positions.map(_.size).sum}"
+      )
     } yield ()
 
   private def getLatestBlockTimestampFrom(trades: List[SimulationTrade]): Option[Instant] = {

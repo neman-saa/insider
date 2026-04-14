@@ -17,8 +17,9 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
   def getHistoricalTrades(from: Int, to: Int): F[List[SimulationTrade]] =
     sql"""
          |select * from trades_simulations
-         |where block_num > $from
-         |and block_num < $to
+         |where block_num >= $from
+         |and block_num <= $to
+         |order by (block_num, tx_index)
          |"""
       .stripMargin
       .query[SimulationTrade]
