@@ -7,7 +7,8 @@ import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.{LeaderboardStrategy, Leaderboards, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
+import org.github.insider.leaderboard.{Leaderboards, WinRateLeaderboardStrategyCH}
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
@@ -61,8 +62,8 @@ object Main extends IOApp.Simple {
         )(nWorkers = 5)
         .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
-      leaderboards <- Leaderboards.make[IO](
-        strategies = List[LeaderboardStrategy[IO]](
+      leaderboards <- Leaderboards.make[IO, SimpleLeaderboardEntry](
+        strategies = List(
           // TotalProfitLeaderboardCH[IO](transactor),
           WinRateLeaderboardStrategyCH[IO](transactor),
         ),

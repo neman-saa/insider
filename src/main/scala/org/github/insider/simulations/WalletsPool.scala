@@ -9,36 +9,24 @@ final case class WalletsPool(
   temporary: List[Wallet],
 ) { self =>
 
-  def resolveTokens(
-    tokenResolutions: Map[TokenId, TokenResolutionInfo],
-    maybeLastestBlockTimestamp: Option[Instant],
-    lockProfit: Boolean,
-  ): WalletsPool = {
-    maybeLastestBlockTimestamp match {
-      case Some(latestBlockTimestamp) =>
-        val walletsNel: NonEmptyList[Wallet] = self.toNel
-        val resolvedWallets: NonEmptyList[Wallet] =
-          walletsNel.map(wallet => wallet.resolveTokens(tokenResolutions, Some(latestBlockTimestamp), lockProfit))
-
-        WalletsPool.fromNel(resolvedWallets)
-      case None =>
-        self
-    }
+  def resolveTokens(tokenResolutions: Map[TokenId, BigDecimal]): WalletsPool = {
+    val walletsNel: NonEmptyList[Wallet] = self.toNel
+    val resolvedWallets: NonEmptyList[Wallet] =
+      walletsNel.map(wallet => wallet.resolveTokens(tokenResolutions))
+    WalletsPool.fromNel(resolvedWallets)
   }
 
   def removeExpiredWallets(
-    tokenResolutions: Map[TokenId, TokenResolutionInfo],
+    tokensCurrentPrices: Map[TokenId, BigDecimal],
     currentBlock: Int,
     sellActiveTokensAtResolutionPrice: Boolean,
   ): (WalletsPool, List[Wallet]) = {
     val (remainedWallets, expiredWallets): (List[Wallet], List[Wallet]) =
       self.temporary.partition(wallet => wallet.activeToBlock.exists(activeTo => activeTo > currentBlock))
-
     val resolvedExpiredWallets: List[Wallet] =
       if (sellActiveTokensAtResolutionPrice)
-        expiredWallets.map(wallet => wallet.resolveTokens(tokenResolutions, resolvedBefore = None, lockProfit = false))
+        expiredWallets.map(wallet => wallet.prepareForPersist(tokensCurrentPrices))
       else expiredWallets
-
     (self.copy(temporary = remainedWallets), resolvedExpiredWallets)
   }
 

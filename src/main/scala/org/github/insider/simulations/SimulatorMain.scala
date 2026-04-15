@@ -19,11 +19,11 @@ object SimulatorMain extends IOApp.Simple {
     SimulationConfig(
       blocksProcessingBatchSize = 1000,
       leaderboardLimit          = 1000,
-      leaderboardBlocksLifetime = 11000,
+      leaderboardBlocksLifetime = 3600 * 24 / 2,
       initialWalletBalance      = 1000,
       minWalletBlocksLifetime   = 60_000,
-      maxWalletBlocksLifetime   = 65_000,
-      maxTemporaryWalletsInPool = 3,
+      maxWalletBlocksLifetime   = 200_000,
+      maxTemporaryWalletsInPool = 3
     )
 
   override def run: IO[Unit] = {

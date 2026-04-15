@@ -75,6 +75,7 @@ class MarketsImpl[F[_]: Async](transactor: Transactor[F], logger: Logger[F]) ext
       _ <- outcomeTokensConnection
     } yield n).transact(transactor)
   }
+
 }
 
 object MarketsImpl {

@@ -1,7 +1,7 @@
 package org.github.insider.alchemy.processors
 
 import org.github.insider.alchemy.domain.AssetTransfer
-import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTransfer, UnknownTransfer}
+import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTransfer}
 import org.github.insider.polymarket.domain.Side.{Buy, Sell}
 import org.github.insider.polymarket.domain.Trade
 import cats.syntax.all._

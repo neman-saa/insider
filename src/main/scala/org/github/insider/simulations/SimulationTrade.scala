@@ -10,6 +10,7 @@ case class SimulationTrade(
   txIndex: Int,
   makerAddress: String,
   tokenId: String,
+  oppositeTokenId: String,
   side: Side,
   amount: BigDecimal,
   totalPrice: BigDecimal,
