@@ -65,7 +65,7 @@ class Simulator[F[_]: Async](
 
       walletsNel = walletsPool.toNel
       processedWalletsNel = walletsNel.map(wallet =>
-        wallet.updatePositions(topTokens, updatedTokenInfos.view.mapValues(_.price).toMap)
+        wallet.updatePositions(topTokens, updatedTokenInfos.view.mapValues(_.price).toMap, to)
       )
       updatedWalletsPool = WalletsPool.fromNel(processedWalletsNel)
       (cleanedTokenInfos, expiredTokenInfos) =
@@ -170,7 +170,7 @@ class Simulator[F[_]: Async](
       .toList
       .filter(_._2._2 > 0)
       .sortBy(-_._2._2)
-      .take(10)
+      .take(20)
       .map { case (tokenId, (price, _)) => tokenId -> price }
       .toMap
 

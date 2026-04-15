@@ -2,13 +2,15 @@ package org.github.insider.simulations
 
 import cats.data.NonEmptyList
 import cats.effect.Sync
-import doobie.Transactor
+import doobie.{ConnectionIO, Transactor}
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import cats.syntax.all._
+import doobie.util.update.Update
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import org.github.insider.polymarket.domain.Side._
 
 import java.time.Instant
 
@@ -35,12 +37,17 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
       .unique
       .transact(transactor)
 
-  def insertWallets(wallets: NonEmptyList[Wallet]): F[Unit] =
-    createQuery(wallets.toList)
-      .update
-      .run
+  def insertWallets(wallets: NonEmptyList[Wallet]): F[Unit] = {
+    (for {
+      _ <- createQuery(wallets.toList)
+        .update
+        .run
+      _ <- insertOperationsQuery(wallets.toList)
+    } yield ())
       .transact(transactor)
       .flatMap(rows => logger.info(s"Inserted $rows trades in 'wallets' table"))
+
+  }
 
   private def createQuery(wallets: List[Wallet]): Fragment = {
     val insert =
@@ -69,6 +76,13 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
 
     insert ++ values
   }
+
+  private def insertOperationsQuery(wallets: List[Wallet]): ConnectionIO[Int] =
+    Update[Operation](
+      """
+      |INSERT INTO operations
+      |VALUES (?, ?, ?, ?, ?, ?)""".stripMargin
+    ).updateMany(wallets.flatMap(_.operations))
 }
 
 object SimulationsRepository {
