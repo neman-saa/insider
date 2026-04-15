@@ -13,6 +13,7 @@ final case class Wallet(
   positions: List[Position],
   activeFromBlock: Int,
   activeToBlock: Option[Int],
+  allRemovedPositions: Map[TokenId, (BigDecimal, BigDecimal)]
 ) { self =>
 
   /** Returns updated wallet if buy succeeds, otherwise returns None */
@@ -29,11 +30,11 @@ final case class Wallet(
     val newBalance = currentBalance + toBeRemoved.foldLeft(BigDecimal(0))((balance, position) =>
       balance + position.size * assetsInfos(position.asset)
     )
-    if(toBeRemained.map(_.asset).toSet == topAssets.keySet && toBeRemoved.isEmpty) self
+    if (toBeRemained.map(_.asset).toSet == topAssets.keySet && toBeRemoved.isEmpty) self
     else {
       val buyPerToken = newBalance / (10 - toBeRemained.length)
 
-      val toBeBought  = topAssets -- toBeRemained.map(_.asset)
+      val toBeBought = topAssets -- toBeRemained.map(_.asset)
       val newPositions = toBeBought.map {
         case (asset, tokenPrice) => Position(asset, buyPerToken / tokenPrice)
       }
@@ -42,7 +43,10 @@ final case class Wallet(
       val remained = newBalance - buyCost
       self.copy(
         positions      = toBeRemained ++ newPositions,
-        currentBalance = remained
+        currentBalance = remained,
+        allRemovedPositions = allRemovedPositions ++ toBeRemoved.map(position =>
+          position.asset -> (position.size, assetsInfos(position.asset))
+        ),
       )
     }
 
@@ -60,7 +64,10 @@ final case class Wallet(
 
     self.copy(
       positions      = remainingPositions,
-      currentBalance = currentBalance + addToBalance
+      currentBalance = currentBalance + addToBalance,
+      allRemovedPositions = allRemovedPositions ++ tokensToBeRemoved.map(position =>
+        position.asset -> (position.size, tokenLastPrices(position.asset))
+      ),
     )
   }
 
@@ -88,12 +95,13 @@ object Wallet {
     id: String
   ): Wallet =
     Wallet(
-      id              = id,
-      initialBalance  = balance,
-      currentBalance  = balance,
-      positions       = Nil,
-      activeFromBlock = activeFromBlock,
-      activeToBlock   = activeToBlock,
+      id                  = id,
+      initialBalance      = balance,
+      currentBalance      = balance,
+      positions           = Nil,
+      activeFromBlock     = activeFromBlock,
+      activeToBlock       = activeToBlock,
+      allRemovedPositions = Map.empty,
     )
 
   def genWithRandomExpiration[F[_]: Sync](activeFromBlock: Int)(

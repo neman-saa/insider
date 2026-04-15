@@ -52,6 +52,10 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) exte
         |    sumIf(total_price, side = 'BUY') / countIf(side = 'BUY') AS avg_buy
         |FROM trades_simulations AS trades
         |WHERE block_num < $block
+        |AND total_price / amount * 1000000 > 0.02
+        |AND total_price / amount * 1000000 < 0.98
+        |AND block_timestamp < end_time
+        |AND end_time > '2000-12-22 01:23:00'
         |GROUP BY trades.maker_address
         |HAVING
         |   max(block_timestamp) > block_ts - INTERVAL 10 DAY AND

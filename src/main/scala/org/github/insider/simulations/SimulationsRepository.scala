@@ -19,6 +19,9 @@ class SimulationsRepository[F[_]: Sync](transactor: Transactor[F], logger: Logge
          |select * from trades_simulations
          |where block_num >= $from
          |and block_num <= $to
+         |and total_price / amount * 1000000 > 0.02 and total_price / amount * 1000000 < 0.98
+         |and block_timestamp < end_time
+         |and end_time > '2000-12-22 01:23:00'
          |order by (block_num, tx_index)
          |"""
       .stripMargin
