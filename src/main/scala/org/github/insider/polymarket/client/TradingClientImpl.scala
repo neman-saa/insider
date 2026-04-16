@@ -5,18 +5,20 @@ import cats.syntax.all._
 import io.circe.Json
 import org.github.insider.polymarket.configs.MainConfig.PolymarketConfig
 import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side}
+import org.http4s.Credentials.Token
 import org.http4s.Method.POST
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.circe.CirceSensitiveDataEntityDecoder.circeEntityDecoder
-import org.http4s.{Request, Status, Uri}
+import org.http4s.{AuthScheme, Request, Status, Uri}
 import org.http4s.client.{Client, middleware}
+import org.http4s.headers.Authorization
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 private class TradingClientImpl[F[_]: Async](
   client: Client[F],
   clobUri: Uri,
-  barrier: String,
+  authorization: Authorization,
   userAddress: String,
   logger: Logger[F],
 ) extends TradingClient[F] {
@@ -24,7 +26,7 @@ private class TradingClientImpl[F[_]: Async](
   override def buy(tokenId: String, amount: BigDecimal, maxPrice: Option[BigDecimal]): F[BuyOrderResult] = {
 
     val request = Request[F](method = POST, uri = clobUri)
-      .withHeaders("Barrier" -> barrier)
+      .withHeaders(authorization)
       .withEntity(
         Json.obj(
           "command" -> Json.fromString("trade"),
@@ -69,7 +71,7 @@ private class TradingClientImpl[F[_]: Async](
   override def sell(tokenId: String, shares: BigDecimal, minPrice: Option[BigDecimal]): F[SellOrderResult] = {
 
     val request = Request[F](method = POST, uri = clobUri)
-      .withHeaders("Barrier" -> barrier)
+      .withHeaders(authorization)
       .withEntity(
         Json.obj(
           "command" -> Json.fromString("trade"),
@@ -114,7 +116,7 @@ private class TradingClientImpl[F[_]: Async](
   override def balance(): F[BigDecimal] = {
 
     val request = Request[F](method = POST, uri = clobUri)
-      .withHeaders("Barrier" -> barrier)
+      .withHeaders(authorization)
       .withEntity(Json.obj("command" -> Json.fromString("balance")))
 
     client.run(request).use {
@@ -159,7 +161,7 @@ private class TradingClientImpl[F[_]: Async](
   override def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): F[Unit] = {
 
     val request = Request[F](method = POST, uri = clobUri)
-      .withHeaders("Barrier" -> barrier)
+      .withHeaders(authorization)
       .withEntity(
         Json.obj(
           "command" -> Json.fromString("trade"),
@@ -202,7 +204,7 @@ private class TradingClientImpl[F[_]: Async](
   override def sellOrder(tokenId: String, shares: BigDecimal, price: BigDecimal): F[Unit] = {
 
     val request = Request[F](method = POST, uri = clobUri)
-      .withHeaders("Barrier" -> barrier)
+      .withHeaders(authorization)
       .withEntity(
         Json.obj(
           "command" -> Json.fromString("trade"),
@@ -247,9 +249,10 @@ object TradingClientImpl {
   def of[F[_]: Async](client: Client[F], config: PolymarketConfig): F[TradingClient[F]] = {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
     val clobUri           = Uri.unsafeFromString(config.clobAddress)
+    val authorization     = Authorization(Token(AuthScheme.Bearer, config.barrier))
 
     Slf4jLogger
       .create[F]
-      .map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, config.barrier, config.userAddress, logger))
+      .map(logger => new TradingClientImpl[F](clientWithLogging, clobUri, authorization, config.userAddress, logger))
   }
 }
