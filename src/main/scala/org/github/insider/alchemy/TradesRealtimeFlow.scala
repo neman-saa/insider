@@ -11,13 +11,14 @@ import org.github.insider.alchemy.domain.{AssetTransfer, User}
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
-import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
+import org.github.insider.leaderboard.LeaderboardEntry.{AdvancedLeaderboardEntry, SimpleLeaderboardEntry}
 import org.github.insider.leaderboard.{HexAddress, Leaderboards}
 import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
 import org.github.insider.polymarket.domain.{Event, Side, Trade}
 import org.github.insider.leaderboard.TradeNotification
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.EventsCached
+import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepository}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -28,53 +29,32 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
   transfersProcessor: TransfersProcessor,
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
+  tokensInfoRepository: TokensInfoRepository[F],
   alchemyConfig: AlchemyConfig,
   tgBot: InsiderTelegramBot[F],
-  leaderboards: Leaderboards[F, SimpleLeaderboardEntry],
+  leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
   eventsCached: EventsCached[F],
-  followTokens: Ref[F, Map[String, Set[String]]],
+  tokensInfoRegistry: TokensInfoRegistry[F],
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
     def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 100
+        toBlock               = latestProcessedBlock + 2
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades                = transfersProcessor.extractTradesFrom(transfers)
 
-        entries <- trades.traverse { trade =>
-          leaderboards.find(HexAddress(trade.makerAddress)).map(trade -> _)
-        }
+        leaderboard       <- leaderboards.getLeaderboard
+        tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
+        updatedTokensInfo <- tokensInfoRegistry.updateWith(trades, tokensMetaInfo, leaderboard)
 
-        followTokens <- followTokens.get
+        tradesNel = NonEmptyList.fromList(trades)
+        _        <- tradesNel.fold(0.pure[F])(tradesRepository.insert)
+        _        <- tradesNel.fold(0.pure[F])(aggregatedRepository.insert)
 
-        filteredEntries = entries.filter {
-          case (trade, entries) if entries.nonEmpty =>
-            (trade.side == Side.Sell && followTokens.contains(trade.tokenId)) ||
-            (trade.side == Side.Buy && trade.singleTokenPrice < BigDecimal(0.8) && trade.totalPrice >= BigDecimal(100))
-          case _ => false
-        }
-
-        tokens = filteredEntries.map(_._1.tokenId).distinct
-
-        events <- if (tokens.nonEmpty) eventsCached.find(tokens) else Map.empty[String, Event].pure[F]
-
-        notifications = filteredEntries.map {
-          case (trade, entries) =>
-            TradeNotification(
-              trade              = trade,
-              leaderboardEntries = entries,
-              event              = events(trade.tokenId),
-              followers          = followTokens.getOrElse(trade.tokenId, Set.empty)
-            )
-        }
-
-        _ <- tgBot.sendNotifications(notifications)
-
-        nel = NonEmptyList.fromList(trades)
-        _  <- nel.fold(0.pure[F])(tradesRepository.insert)
-        _  <- nel.fold(0.pure[F])(aggregatedRepository.insert)
+        tokensInfoNel = NonEmptyList.fromList(updatedTokensInfo)
+        _            <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
 
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
@@ -136,11 +116,12 @@ object TradesRealtimeFlow {
     transfersProcessor: TransfersProcessor,
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
+    tokensInfoRepository: TokensInfoRepository[F],
     alchemyConfig: AlchemyConfig,
     tgBot: InsiderTelegramBot[F],
-    leaderboards: Leaderboards[F, SimpleLeaderboardEntry],
+    leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
     eventsCached: EventsCached[F],
-    followTokens: Ref[F, Map[String, Set[String]]],
+    tokensInfoRegistry: TokensInfoRegistry[F],
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -150,11 +131,12 @@ object TradesRealtimeFlow {
           transfersProcessor,
           tradesRepository,
           aggregatedRepository,
+          tokensInfoRepository,
           alchemyConfig,
           tgBot,
           leaderboards,
           eventsCached,
-          followTokens
+          tokensInfoRegistry,
         )(logger)
       )
 }

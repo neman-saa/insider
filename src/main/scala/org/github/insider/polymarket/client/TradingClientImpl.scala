@@ -249,7 +249,7 @@ object TradingClientImpl {
   def of[F[_]: Async](client: Client[F], config: PolymarketConfig): F[TradingClient[F]] = {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
     val clobUri           = Uri.unsafeFromString(config.clobAddress)
-    val authorization     = Authorization(Token(AuthScheme.Bearer, config.barrier))
+    val authorization     = Authorization(Token(AuthScheme.Bearer, config.bearer))
 
     Slf4jLogger
       .create[F]

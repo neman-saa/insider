@@ -7,8 +7,9 @@ import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
-import org.github.insider.leaderboard.{Leaderboards, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.LeaderboardEntry.{AdvancedLeaderboardEntry, SimpleLeaderboardEntry}
+import org.github.insider.leaderboard.strategy.{RoiNoTradersStrategyCh, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
@@ -16,6 +17,7 @@ import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
+import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
@@ -40,6 +42,9 @@ object Main extends IOApp.Simple {
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
 
+      tokensInfoRepository <- TokensInfoRepositoryImpl.of[IO](transactor).toResource
+      tokensInfoRegistry <- TokensInfoRegistry.withInit[IO](tokensInfoRepository, cleanUpPeriod = 5.minutes).toResource
+
       transfersProcessor = TransfersProcessorImpl()
 
       followTokens <- Ref.empty[IO, Map[String, Set[String]]].toResource
@@ -62,11 +67,8 @@ object Main extends IOApp.Simple {
         )(nWorkers = 5)
         .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
-      leaderboards <- Leaderboards.make[IO, SimpleLeaderboardEntry](
-        strategies = List(
-          // TotalProfitLeaderboardCH[IO](transactor),
-          WinRateLeaderboardStrategyCH[IO](transactor),
-        ),
+      leaderboards <- Leaderboards.make[IO, AdvancedLeaderboardEntry](
+        strategy = RoiNoTradersStrategyCh[IO](transactor),
         tradesRepository
       )
 
@@ -76,11 +78,12 @@ object Main extends IOApp.Simple {
           transfersProcessor,
           tradesRepository,
           aggregatedTradesRepository,
+          tokensInfoRepository,
           config.alchemy,
           insiderBot,
           leaderboards,
           eventsCached,
-          followTokens,
+          tokensInfoRegistry,
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource

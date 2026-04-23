@@ -8,24 +8,45 @@ import cats.syntax.all._
 import com.evolution.scache.{Cache, ExpiringCache}
 import org.github.insider.polymarket.client.EventsClient
 import org.github.insider.polymarket.domain.Event
+import org.github.insider.realtime.tokens.{TokenId, TokenMetaInfo}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import scala.concurrent.duration.DurationInt
 
-class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, String, Event], eventsClient: EventsClient[F]) {
+class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, TokenId, Event], eventsClient: EventsClient[F]) {
 
-  def find(tokenIds: List[String]): F[Map[String, Event]] = for {
-    contained <- tokenIds.traverse(tokenId => cache.contains(tokenId).map((tokenId, _)))
-    needToLoad = contained.collect { case (tokenId, false) => tokenId }
-    events    <- if (needToLoad.nonEmpty) eventsClient.getEventsByTokens(needToLoad) else List.empty[Event].pure[F]
-    map = needToLoad
-      .map(tokenId => tokenId -> events.find(_.markets.get.head.tokens.flatMap(_.id).contains(tokenId)).get)
-      .toMap
-    res <- tokenIds.traverse { tokenId =>
-      cache.getOrUpdate(tokenId)(map(tokenId).pure[F]).map(tokenId -> _)
+  def getTokensMetaInfo(tokenIds: List[TokenId]): F[Map[TokenId, TokenMetaInfo]] = {
+    tokenIds
+      .traverse { tokenId =>
+        getEvent(tokenId).map { maybeEvent =>
+          val maybeMarket = maybeEvent.flatMap(event =>
+            event.markets.flatMap { markets =>
+              markets.find { market =>
+                market.tokens.flatMap(_.id).contains(tokenId)
+              }
+            }
+          )
+
+          val maybeTokenMetaInfo =
+            for {
+              market          <- maybeMarket
+              oppositeTokenId <- market.tokens.flatMap(_.id).find(_ != tokenId)
+              resolveDate     <- market.endDate // Is this correct?
+            } yield TokenMetaInfo(tokenId, oppositeTokenId, resolveDate)
+
+          maybeTokenMetaInfo.map(tokenMetaInfo => tokenId -> tokenMetaInfo)
+        }
+      }
+      .map(_.flatten.toMap)
+  }
+
+  private def getEvent(tokenId: TokenId): F[Option[Event]] =
+    cache.getOrUpdateOpt(tokenId) {
+      eventsClient.getEventsByTokens(List(tokenId)).map { events =>
+        events.headOption
+      }
     }
-  } yield res.toMap
 }
 
 object EventsCached {

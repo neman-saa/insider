@@ -1,15 +1,16 @@
-package org.github.insider.leaderboard
+package org.github.insider.leaderboard.strategy
 
 import cats.effect.Sync
 import doobie.Transactor
 import doobie.implicits._
-import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
-import org.github.insider.leaderboard.RoiNoTradersStrategyCh.RoiNoTradersEntry
+import org.github.insider.leaderboard.strategy.RoiNoTradersStrategyCh.RoiNoTradersEntry
+import org.github.insider.leaderboard.{HexAddress, LeaderboardStrategy}
 
-private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
+private class RoiNoTradersStrategyChSimulation[F[_]: Sync](transactor: Transactor[F])
+    extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("roi-leaderboard-with-no-traders")
 
@@ -73,7 +74,7 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F]) exte
       """.stripMargin
 }
 
-object RoiNoTradersStrategyCh {
+object RoiNoTradersStrategyChSimulation {
 
   def apply[F[_]: Sync](transactor: Transactor[F]): LeaderboardStrategy[F, AdvancedLeaderboardEntry] =
     new RoiNoTradersStrategyCh[F](transactor)

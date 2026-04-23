@@ -88,9 +88,9 @@ class Simulator[F[_]: Async](
       _              <- walletsPoolRef.set(nextWalletsPool)
       _              <- logger.info(s"Temporary wallets in pool: + ${nextWalletsPool.temporary.size}")
 
-      _ <- maybeReloadLeaderboard(currentBlock = to)(config)
+      _              <- maybeReloadLeaderboard(currentBlock = to)(config)
       allTokensInfos <- allTokenInfosRef.get
-      _ <- currentTimeRef.set(maybeLatestBlockTimestamp.getOrElse(currentTime))
+      _              <- currentTimeRef.set(maybeLatestBlockTimestamp.getOrElse(currentTime))
     } yield ()
 
   private def getLatestBlockTimestampFrom(trades: List[SimulationTrade]): Option[Instant] = {

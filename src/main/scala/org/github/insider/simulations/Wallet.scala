@@ -99,7 +99,7 @@ final case class Wallet(
     self.copy(
       currentBalance = currentBalance + balance,
       positions      = Nil,
-      operations = operations ++ sellOperations
+      operations     = operations ++ sellOperations
     )
   }
 

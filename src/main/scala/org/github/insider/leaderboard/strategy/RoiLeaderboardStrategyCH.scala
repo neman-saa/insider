@@ -1,17 +1,18 @@
-package org.github.insider.leaderboard
+package org.github.insider.leaderboard.strategy
 
 import cats.effect.Sync
 import doobie.Transactor
-import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
 import doobie.implicits._
-import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
-import org.github.insider.leaderboard.RoiLeaderboardStrategyCH.RoiLeaderboardEntry
+import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
+import org.github.insider.leaderboard.strategy.RoiLeaderboardStrategyCH.RoiLeaderboardEntry
+import org.github.insider.leaderboard.{HexAddress, LeaderboardStrategy}
 
 import java.time.Instant
 
-private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
+private class RoiLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F])
+    extends LeaderboardStrategy[F, AdvancedLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Total Profit Leaderboard")
 

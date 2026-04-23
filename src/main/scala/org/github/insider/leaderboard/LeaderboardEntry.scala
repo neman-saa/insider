@@ -8,7 +8,6 @@ trait LeaderboardEntry {
 
   def prettyPrint: String
 
-
 }
 
 object LeaderboardEntry {

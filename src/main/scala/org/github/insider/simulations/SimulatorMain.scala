@@ -4,12 +4,8 @@ import cats.effect.{IO, IOApp}
 import org.github.insider.polymarket.configs.MainConfig
 import cats.syntax.all._
 import org.github.insider.alchemy.repository.TradesRepositoryImpl
-import org.github.insider.leaderboard.{
-  LeaderboardStrategy,
-  Leaderboards,
-  RoiNoTradersStrategyCh,
-  WinRateLeaderboardStrategyCH
-}
+import org.github.insider.leaderboard.strategy.{RoiNoTradersStrategyCh, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.{LeaderboardStrategy, Leaderboards}
 import org.github.insider.persistance.Database
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 

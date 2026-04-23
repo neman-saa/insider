@@ -1,15 +1,16 @@
-package org.github.insider.leaderboard
+package org.github.insider.leaderboard.strategy
 
 import cats.effect.Sync
 import doobie.Transactor
 import doobie.implicits._
-import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
 import org.github.insider.leaderboard.LeaderboardEntry.SimpleLeaderboardEntry
 import org.github.insider.leaderboard.LeaderboardStrategy.LeaderboardKeyName
-import org.github.insider.leaderboard.WinRateLeaderboardStrategyCH.WinRateLeaderboardEntry
+import org.github.insider.leaderboard.strategy.WinRateLeaderboardStrategyCH.WinRateLeaderboardEntry
+import org.github.insider.leaderboard.{HexAddress, LeaderboardStrategy}
 
-private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F]) extends LeaderboardStrategy[F, SimpleLeaderboardEntry] {
+private class WinRateLeaderboardStrategyCH[F[_]: Sync](transactor: Transactor[F])
+    extends LeaderboardStrategy[F, SimpleLeaderboardEntry] {
 
   override def key: LeaderboardKeyName = LeaderboardKeyName("Win Rate Leaderboard")
 

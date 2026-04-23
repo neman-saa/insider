@@ -3,11 +3,17 @@ package org.github.insider.polymarket.domain
 import doobie.Meta
 import io.circe.{Decoder, Encoder}
 
-sealed trait Side
+sealed trait Side {
+  def sign: Int
+}
 
 object Side {
-  final case object Buy  extends Side
-  final case object Sell extends Side
+  case object Buy extends Side {
+    override def sign: Int = 1
+  }
+  case object Sell extends Side {
+    override def sign: Int = -1
+  }
 
   implicit val circeDecoder: Decoder[Side] =
     Decoder[String].map {
