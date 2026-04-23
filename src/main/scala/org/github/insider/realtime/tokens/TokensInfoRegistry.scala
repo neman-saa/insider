@@ -38,14 +38,14 @@ final class TokensInfoRegistry[F[_]: Sync] private (registryR: Ref[F, Map[TokenI
 
             val updatedTokenInfo = TokenInfo(
               id               = trade.tokenId,
-              price            = trade.totalPrice / trade.amount,
+              price            = trade.singleTokenPrice,
               score            = tokenScore + scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
             )
             val updatedOppositeTokenInfo = TokenInfo(
               id               = metaInfo.oppositeTokenId,
-              price            = 1 - trade.totalPrice / trade.amount,
+              price            = 1 - trade.singleTokenPrice,
               score            = oppositeTokenScore - scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
