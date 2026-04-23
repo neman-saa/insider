@@ -28,7 +28,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (registryR: Ref[F, Map[TokenI
             val scoreFromLeader = leaderboard.get(HexAddress(trade.makerAddress)) match {
               case Some(entry) =>
                 val score =
-                  (trade.totalPrice / entry.avgBuy) * (entry.score / entry.totalLeaderboardScore) * entry.totalLeaderboardSize
+                  trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
                 score * trade.side.sign
               case None => BigDecimal(0)
             }
