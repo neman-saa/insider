@@ -24,13 +24,13 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
     )
       .updateMany(tokens)
       .transact(transactor)
-      .void
       .flatTap(rows => logger.info(s"Inserted $rows tokens info in 'tokens_info' table"))
+      .void
 
   override def select(now: Instant): F[List[TokenInfo]] =
     fr"""
         |SELECT id, price, score, resolve_date, last_updated_block_num
-        |FROM tokens_info
+        |FROM tokens_info FINAL
         |WHERE resolve_date > $now
         |"""
       .stripMargin
