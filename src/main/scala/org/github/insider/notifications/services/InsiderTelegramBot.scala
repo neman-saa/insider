@@ -108,7 +108,8 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
 
     val tokenOutcome: Option[String] =
       for {
-        markets <- notification.event.markets
+        event   <- notification.event
+        markets <- event.markets
         market  <- markets.headOption
         token   <- market.tokens.find(_.id.contains(notification.trade.tokenId))
         outcome <- token.outcome
@@ -126,6 +127,7 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
         }
         .mkString("\n")
 
+    // format: off
     s"""
        |Wallet address: ${notification.trade.makerAddress}
        |Operation side: ${notification.trade.side}
@@ -134,12 +136,13 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
        |Single token price: ${notification.trade.singleTokenPrice}
        |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("Unknown")}
        |Token ID: ${notification.trade.tokenId}
-       |Event link: ${notification.event.slug.map(slug => s"https://polymarket.com/event/$slug").getOrElse("Unknown")}
-       |Market question: ${notification.event.markets.flatMap(_.headOption.map(_.question)).getOrElse("Unknown")}
+       |Event link: ${notification.event.map(_.slug).map(slug => s"https://polymarket.com/event/$slug").getOrElse("Unknown")}
+       |Market question: ${notification.event.flatMap(_.markets).flatMap(_.headOption.map(_.question)).getOrElse("Unknown")}
        |Outcome: ${tokenOutcome.getOrElse("Unknown")}
        |$leaderboard
        |$followersStr
        |""".stripMargin
+    // format: on
   }
 
   private def followListToMessage(username: String, tokens: List[String]): String = {

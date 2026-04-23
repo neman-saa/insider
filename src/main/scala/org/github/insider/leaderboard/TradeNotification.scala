@@ -6,6 +6,6 @@ import org.github.insider.polymarket.domain.{Event, Trade}
 final case class TradeNotification(
   trade: Trade,
   leaderboardEntries: List[(LeaderboardKeyName, LeaderboardEntry)],
-  event: Event,
+  event: Option[Event],
   followers: Set[String],
 )

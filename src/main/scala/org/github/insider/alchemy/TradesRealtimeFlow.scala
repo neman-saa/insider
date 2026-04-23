@@ -64,6 +64,14 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
+        tradesForNotifications = trades.filter(trade => leaderboard.keySet.map(_.value).contains(trade.makerAddress))
+        notifications <- tradesForNotifications.traverse { trade =>
+          eventsCached.getEvent(trade.tokenId).map { maybeEvent =>
+            TradeNotification(trade, List.empty, maybeEvent, Set.empty)
+          }
+        }
+        _ <- tgBot.sendNotifications(notifications)
+
         _ <- appHealthCheckViaTgBot(latestHealthcheckInstantR)
 
         _ <- logger.info(s"Finished range [${latestProcessedBlock + 1} - $nextLatestBlock], sleeping 3 seconds...")

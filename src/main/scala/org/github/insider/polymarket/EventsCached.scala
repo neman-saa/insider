@@ -41,7 +41,7 @@ class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, TokenId, Even
       .map(_.flatten.toMap)
   }
 
-  private def getEvent(tokenId: TokenId): F[Option[Event]] =
+  def getEvent(tokenId: TokenId): F[Option[Event]] =
     cache.getOrUpdateOpt(tokenId) {
       eventsClient.getEventsByTokens(List(tokenId)).map { events =>
         events.headOption
