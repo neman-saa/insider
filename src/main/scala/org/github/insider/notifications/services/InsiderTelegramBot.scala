@@ -14,6 +14,9 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
 ) extends TelegramBot[F](token, backend)
     with Polling[F] {
 
+  def sendAlive: F[Unit] =
+    request(SendMessage(chatId, "I AM ALIVE")).void
+
   def sendNotifications(notifications: List[TradeNotification]): F[Unit] =
     notifications
       .traverse_ { notification =>

@@ -1,8 +1,9 @@
 package org.github.insider.alchemy
 
-import cats.Parallel
+import cats.{Applicative, Parallel}
 import cats.data.NonEmptyList
-import cats.effect.Ref
+import cats.effect.{Clock, Ref}
+import cats.effect.implicits.genSpawnOps
 import cats.effect.kernel.Async
 import cats.syntax.all._
 import fs2.concurrent.Topic
@@ -22,6 +23,7 @@ import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoReposit
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
 class TradesRealtimeFlow[F[_]: Async: Parallel](
@@ -38,10 +40,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
-    def realtimeAction(latestProcessedBlockR: Ref[F, Long]): F[List[Trade]] =
+    def realtimeAction(
+      latestProcessedBlockR: Ref[F, Long],
+      latestHealthcheckInstantR: Ref[F, Instant],
+    ): F[List[Trade]] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
-        toBlock               = latestProcessedBlock + 2
+        toBlock               = latestProcessedBlock + 100
         transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
         trades                = transfersProcessor.extractTradesFrom(transfers)
 
@@ -59,17 +64,21 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
+        _ <- appHealthCheckViaTgBot(latestHealthcheckInstantR)
+
         _ <- logger.info(s"Finished range [${latestProcessedBlock + 1} - $nextLatestBlock], sleeping 3 seconds...")
         _ <- Async[F].sleep(3.seconds)
       } yield trades
 
     for {
+      latestHealthcheckInstantR <- Ref.ofEffect[F, Instant](Clock[F].realTimeInstant)
+
       latestProcessedBlockR <- Ref.empty[F, Long]
       latestProcessedBlock  <- tradesRepository.getLatestBlock
       _                     <- latestProcessedBlockR.set(latestProcessedBlock)
       _ <- fs2
         .Stream
-        .repeatEval(realtimeAction(latestProcessedBlockR))
+        .repeatEval(realtimeAction(latestProcessedBlockR, latestHealthcheckInstantR))
         .compile
         .drain
     } yield ()
@@ -108,6 +117,18 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
       _ <- logger.info(s"Finished extraction for range [$fromBlock - $toBlock] with ${transfers.size} transfers")
     } yield transfers
   }
+
+  private def appHealthCheckViaTgBot(latestHealthcheckInstantR: Ref[F, Instant]): F[Unit] =
+    for {
+      now                      <- Clock[F].realTimeInstant
+      latestHealthcheckInstant <- latestHealthcheckInstantR.get
+
+      nowSeconds                      = now.getEpochSecond
+      latestHealthcheckInstantSeconds = latestHealthcheckInstant.getEpochSecond
+      delta                           = nowSeconds - latestHealthcheckInstantSeconds
+
+      _ <- Applicative[F].whenA(delta > 1800)(tgBot.sendAlive >> latestHealthcheckInstantR.set(now))
+    } yield ()
 }
 
 object TradesRealtimeFlow {
