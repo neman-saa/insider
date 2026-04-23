@@ -136,7 +136,7 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
        |Single token price: ${notification.trade.singleTokenPrice}
        |Block Timestamp: ${notification.trade.blockTimestamp.getOrElse("Unknown")}
        |Token ID: ${notification.trade.tokenId}
-       |Event link: ${notification.event.map(_.slug).map(slug => s"https://polymarket.com/event/$slug").getOrElse("Unknown")}
+       |Event link: ${notification.event.flatMap(_.slug).map(slug => s"https://polymarket.com/event/$slug").getOrElse("Unknown")}
        |Market question: ${notification.event.flatMap(_.markets).flatMap(_.headOption.map(_.question)).getOrElse("Unknown")}
        |Outcome: ${tokenOutcome.getOrElse("Unknown")}
        |$leaderboard
