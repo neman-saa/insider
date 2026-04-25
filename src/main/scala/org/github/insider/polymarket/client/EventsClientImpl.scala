@@ -12,6 +12,7 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.github.insider.polymarket.codecs.CustomCodecs._
 
 import java.time.Instant
+import scala.concurrent.duration.DurationInt
 
 private class EventsClientImpl[F[_]: Async](
   client: Client[F],
@@ -76,7 +77,7 @@ private class EventsClientImpl[F[_]: Async](
         }
       case other =>
         logger.error(s"Unsuccessful response received while fetching events: $other") >>
-          Async[F].raiseError(new Throwable("todo"))
+          Async[F].sleep(10.seconds) >> getEvents(uri)
     }
   }
 
@@ -93,7 +94,7 @@ private class EventsClientImpl[F[_]: Async](
         }
       case other =>
         logger.error(s"Unsuccessful response received while fetching markets: $other") >>
-          Async[F].raiseError(new Throwable("todo"))
+          Async[F].sleep(10.seconds) >> getMarkets(uri)
     }
   }
 

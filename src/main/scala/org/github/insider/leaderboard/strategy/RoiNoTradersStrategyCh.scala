@@ -72,7 +72,7 @@ private class RoiNoTradersStrategyCh[F[_]: Sync](transactor: Transactor[F])
       |        sumIf(total_price, side = 'SELL')
       |    ) > 1000
       |    AND countIf(side = 'BUY') / count(*) > 0.8
-      |    AND roi > 1.2
+      |    AND roi > 0.95
       |ORDER BY score DESC
       |LIMIT $limit
       """.stripMargin

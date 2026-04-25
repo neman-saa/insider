@@ -22,7 +22,7 @@ class Leaderboards[F[_]: Async, Entry <: LeaderboardEntry](
       .getOrUpdate(strategy.key)(
         trades
           .getLatestBlock
-          .flatMap(block => strategy.load(block, 1000).flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
+          .flatMap(block => strategy.load(block, 2500).flatTap(_ => logger.info(s"Loaded ${strategy.key} into cache")))
       )
 }
 
