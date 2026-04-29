@@ -3,7 +3,7 @@ package org.github.insider.polymarket.configs
 import cats.effect.kernel.{Resource, Sync}
 import cats.syntax.all._
 import com.bot4s.telegram.models.ChatId
-import org.github.insider.polymarket.configs.MainConfig.{AlchemyConfig, PolymarketConfig, TelegramConfig}
+import org.github.insider.polymarket.configs.MainConfig.{AlchemyConfig, PolymarketConfig, TelegramConfig, WalletsConfig}
 import pureconfig.error.ExceptionThrown
 import pureconfig.{ConfigReader, ConfigSource}
 import pureconfig.generic.semiauto.deriveReader
@@ -15,7 +15,8 @@ final case class MainConfig(
   dbConfig: DbConfig,
   alchemy: AlchemyConfig,
   telegram: TelegramConfig,
-  polymarket: PolymarketConfig
+  polymarket: PolymarketConfig,
+  wallets: WalletsConfig
 )
 
 object MainConfig {
@@ -29,6 +30,13 @@ object MainConfig {
   final case class TelegramConfig(
     chatId: ChatId,
     botToken: String
+  )
+
+  final case class WalletsConfig(
+    marketsAmount: Int,
+    secondsToSellBeforeResolve: Int,
+    sellThresholdPercent: Int,
+    spreadPercent: Int
   )
 
   case class PolymarketConfig(clobAddress: String, userAddress: String, bearer: String)
@@ -62,6 +70,7 @@ object MainConfig {
   }
 
   implicit val polymarketConfigReader: ConfigReader[PolymarketConfig] = deriveReader
+  implicit val walletsConfigReader: ConfigReader[WalletsConfig]     = deriveReader
 
   def loadR[F[_]: Sync]: Resource[F, MainConfig] =
     Resource.eval(Sync[F].delay(ConfigSource.default.loadOrThrow[MainConfig]))

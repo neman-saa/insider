@@ -10,7 +10,10 @@ import org.github.insider.polymarket.domain.Trade
 
 import scala.concurrent.duration.FiniteDuration
 
-final class TokensInfoRegistry[F[_]: Sync] private (registryR: Ref[F, Map[TokenId, TokenInfo]]) {
+final class TokensInfoRegistry[F[_]: Sync] private (
+  registryR: Ref[F, Map[TokenId, TokenInfo]],
+  secondsToSellBeforeResolve: Int
+) {
 
   /**
     * @return
@@ -62,12 +65,16 @@ final class TokensInfoRegistry[F[_]: Sync] private (registryR: Ref[F, Map[TokenI
     }
   }
 
-  def topTokens(limit: Int): F[Map[TokenId, BigDecimal]] = {
+  def tokensInfo: F[Map[TokenId, (BigDecimal, BigDecimal)]] = {
     for {
       now      <- Clock[F].realTimeInstant
       registry <- registryR.get
     } yield {
       registry
+        .filter {
+          case (_, tokenInfo) =>
+            tokenInfo.resolveDate.getEpochSecond - secondsToSellBeforeResolve > now.getEpochSecond
+        }
         .map {
           case (tokenId, tokenInfo) =>
             val timeToResolve = (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond).max(1)
@@ -79,11 +86,6 @@ final class TokensInfoRegistry[F[_]: Sync] private (registryR: Ref[F, Map[TokenI
         .filter {
           case (_, (_, efficiency)) => efficiency > 0
         }
-        .sortBy {
-          case (_, (_, efficiency)) => -efficiency
-        }
-        .take(limit)
-        .map { case (tokenId, (price, _)) => tokenId -> price }
         .toMap
     }
   }
@@ -102,12 +104,13 @@ object TokensInfoRegistry {
   def withInit[F[_]: Async](
     tokensInfoRepository: TokensInfoRepository[F],
     cleanUpPeriod: FiniteDuration,
+    secondsToSellBeforeResolve: Int
   ): F[TokensInfoRegistry[F]] =
     for {
       now          <- Clock[F].realTimeInstant
       tokensInfo   <- tokensInfoRepository.select(now)
       registryR    <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
-      tokenRegistry = new TokensInfoRegistry[F](registryR)
+      tokenRegistry = new TokensInfoRegistry[F](registryR, secondsToSellBeforeResolve)
       _            <- fs2.Stream.repeatEval(tokenRegistry.cleanUpAction).metered(cleanUpPeriod).compile.drain.start
     } yield tokenRegistry
 }

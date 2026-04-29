@@ -13,11 +13,12 @@ import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
-import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl}
+import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl, TradingClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
+import org.github.insider.realtime.wallets.Wallet
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
@@ -38,12 +39,15 @@ object Main extends IOApp.Simple {
       eventClient     <- EventsClientImpl.of[IO](client).toResource
       tagsClient      <- TagsClientImpl.of[IO](client).toResource
       transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
 
       tokensInfoRepository <- TokensInfoRepositoryImpl.of[IO](transactor).toResource
-      tokensInfoRegistry <- TokensInfoRegistry.withInit[IO](tokensInfoRepository, cleanUpPeriod = 5.minutes).toResource
+      tokensInfoRegistry <- TokensInfoRegistry
+        .withInit[IO](tokensInfoRepository, cleanUpPeriod = 5.minutes, config.wallets.secondsToSellBeforeResolve)
+        .toResource
 
       transfersProcessor = TransfersProcessorImpl()
 
@@ -72,6 +76,16 @@ object Main extends IOApp.Simple {
         tradesRepository
       )
 
+      wallet <- Wallet
+        .of(
+          tokensInfoRegistry,
+          tradingClient,
+          config.wallets.marketsAmount,
+          config.wallets.sellThresholdPercent,
+          config.wallets.spreadPercent
+        )
+        .toResource
+
       realtimeTrades <- TradesRealtimeFlow
         .of[IO](
           transfersClient,
@@ -84,6 +98,7 @@ object Main extends IOApp.Simple {
           leaderboards,
           eventsCached,
           tokensInfoRegistry,
+          wallet
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource

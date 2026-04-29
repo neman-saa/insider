@@ -9,5 +9,5 @@ final case class BuyOrderResult(
 )
 
 object BuyOrderResult {
-  implicit val circeDecoder: Decoder[SellOrderResult] = deriveDecoder
+  implicit val circeDecoder: Decoder[BuyOrderResult] = deriveDecoder
 }
