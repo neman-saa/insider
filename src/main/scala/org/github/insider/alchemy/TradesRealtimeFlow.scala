@@ -43,7 +43,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     def realtimeAction(
       latestProcessedBlockR: Ref[F, Long],
       latestHealthCheckInstantR: Ref[F, Instant],
-    ): F[List[Trade]] =
+    ): F[Unit] =
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 100
@@ -78,7 +78,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 
         _ <- logger.info(s"Finished range [${latestProcessedBlock + 1} - $nextLatestBlock], sleeping 3 seconds...")
         _ <- Async[F].sleep(3.seconds)
-      } yield trades
+      } yield ()
 
     for {
       latestHealthCheckInstantR <- Ref.ofEffect[F, Instant](Clock[F].realTimeInstant)
@@ -86,11 +86,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
       latestProcessedBlockR <- Ref.empty[F, Long]
       latestProcessedBlock  <- tradesRepository.getLatestBlock
       _                     <- latestProcessedBlockR.set(latestProcessedBlock)
-      _ <- fs2
-        .Stream
-        .repeatEval(realtimeAction(latestProcessedBlockR, latestHealthCheckInstantR))
-        .compile
-        .drain
+
+      repeatableAction =
+        realtimeAction(latestProcessedBlockR, latestHealthCheckInstantR).handleErrorWith { e =>
+          logger.error(s"Error in trades realtime flow: ${e.getMessage}") >> Async[F].sleep(10.seconds)
+        }
+
+      _ <- fs2.Stream.repeatEval(repeatableAction).compile.drain
     } yield ()
   }
 

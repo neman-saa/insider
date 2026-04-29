@@ -52,8 +52,13 @@ class EventsRealtimeFlow[F[_]: Async](
     for {
       lastTime <- eventsImpl.getLatestClosedDate
       ref      <- Ref.of[F, Instant](lastTime)
-      res      <- fs2.Stream.repeatEval(run(ref)).compile.drain
 
+      repeatableAction =
+        run(ref).handleErrorWith { e =>
+          logger.error(s"Error in events realtime flow: ${e.getMessage}") *> Async[F].sleep(10.seconds)
+        }
+
+      _ <- fs2.Stream.repeatEval(repeatableAction).compile.drain
     } yield ()
   }
 

@@ -186,7 +186,7 @@ final class Wallet[F[_]: Async] private (
           )
       )
       holdingsAfterMissingBuys <- currentHoldings(tokenInfos)
-      missingMarketIds = missingMarkets.map(_.asset).toSet
+      missingMarketIds          = missingMarkets.map(_.asset).toSet
       underweightMarkets =
         holdingsAfterMissingBuys
           .filter(holding =>

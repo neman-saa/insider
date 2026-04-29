@@ -70,7 +70,7 @@ object MainConfig {
   }
 
   implicit val polymarketConfigReader: ConfigReader[PolymarketConfig] = deriveReader
-  implicit val walletsConfigReader: ConfigReader[WalletsConfig]     = deriveReader
+  implicit val walletsConfigReader: ConfigReader[WalletsConfig]       = deriveReader
 
   def loadR[F[_]: Sync]: Resource[F, MainConfig] =
     Resource.eval(Sync[F].delay(ConfigSource.default.loadOrThrow[MainConfig]))
