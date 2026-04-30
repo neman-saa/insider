@@ -7,10 +7,13 @@ import com.bot4s.telegram.methods._
 import com.bot4s.telegram.models._
 import com.bot4s.telegram.cats.TelegramBot
 import org.github.insider.leaderboard.TradeNotification
+import org.github.insider.polymarket.client.TradingClient
+import org.github.insider.polymarket.domain.Position
 import sttp.client4.Backend
 
 class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Backend[F])(
-  followTokens: Ref[F, Map[String, Set[String]]] // token id to set of usernames
+  followTokens: Ref[F, Map[String, Set[String]]], // token id to set of usernames
+  tradingClient: TradingClient[F],
 ) extends TelegramBot[F](token, backend)
     with Polling[F] {
 
@@ -28,6 +31,16 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
     if (message.chat.chatId != chatId) Async[F].unit
 
     val action = message.text match {
+      case Some(msg) if msg.startsWith("/balance") =>
+        tradingClient.balance().flatMap { balance =>
+          request(SendMessage(chatId, balanceToMessage(balance))).void
+        }
+
+      case Some(msg) if msg.startsWith("/positions") =>
+        tradingClient.positions().flatMap { positions =>
+          request(SendMessage(chatId, positionsToMessage(positions))).void
+        }
+
       case Some(msg) if msg.startsWith("/follow-list") =>
         val maybeUsername = message.from.flatMap(_.username)
 
@@ -151,6 +164,18 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
     s"""
        |Tokens followed by @$username (${tokens.size})
        |$tokensListStr
+       |""".stripMargin
+  }
+
+  private def balanceToMessage(balance: BigDecimal): String =
+    s"Current wallet balance: $balance"
+
+  private def positionsToMessage(positions: List[Position]): String = {
+    val positionsListStr = positions.map(position => s"- asset ${position.asset} size ${position.size}").mkString("\n")
+
+    s"""
+       |Current wallet positions:
+       |$positionsListStr
        |""".stripMargin
   }
 }

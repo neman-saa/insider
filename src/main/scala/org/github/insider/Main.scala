@@ -54,8 +54,11 @@ object Main extends IOApp.Simple {
       followTokens <- Ref.empty[IO, Map[String, Set[String]]].toResource
 
       tgBackend <- HttpClientCatsBackend.resource[IO]()
-      insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(followTokens)
-      _         <- runForeverTgPolling(insiderBot).start.toResource
+      insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(
+        followTokens,
+        tradingClient
+      )
+      _ <- runForeverTgPolling(insiderBot).start.toResource
 
       eventsWorker <- EventsExtractorWorkerGroup
         .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
