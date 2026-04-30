@@ -9,4 +9,5 @@ trait TradingClient[F[_]] {
   def positions(user: Option[String] = None): F[List[Position]]
   def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): F[Unit]
   def sellOrder(tokenId: String, shares: BigDecimal, price: BigDecimal): F[Unit]
+  def portfolioValue(user: Option[String] = None): F[BigDecimal]
 }

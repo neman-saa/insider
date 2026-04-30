@@ -31,6 +31,11 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
     if (message.chat.chatId != chatId) Async[F].unit
 
     val action = message.text match {
+      case Some(msg) if msg.startsWith("/portfolio-value") =>
+        tradingClient.portfolioValue().flatMap { portfolioValue =>
+          request(SendMessage(chatId, portfolioValueToMessage(portfolioValue))).void
+        }
+
       case Some(msg) if msg.startsWith("/balance") =>
         tradingClient.balance().flatMap { balance =>
           request(SendMessage(chatId, balanceToMessage(balance))).void
@@ -169,6 +174,9 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
 
   private def balanceToMessage(balance: BigDecimal): String =
     s"Current wallet balance: $balance"
+
+  private def portfolioValueToMessage(portfolioValue: BigDecimal): String =
+    s"Current portfolio value: $portfolioValue"
 
   private def positionsToMessage(positions: List[Position]): String = {
     val positionsListStr = positions.map(position => s"- asset ${position.asset} size ${position.size}").mkString("\n")
