@@ -165,7 +165,10 @@ private class TradingClientImpl[F[_]: Async](
         .withQueryParam("user", user.getOrElse(userAddress))
 
     client.get[BigDecimal](uri) {
-      case Status.Successful(response) => response.as[TotalPortfolioValueResult].map(_.value)
+      case Status.Successful(response) =>
+        response.as[List[TotalPortfolioValueResult]].map { values =>
+          values.map(_.value).sum
+        }
       case other =>
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")

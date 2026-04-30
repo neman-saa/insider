@@ -59,7 +59,7 @@ final class Wallet[F[_]: Async] private (
     def tryBuy(asset: String, info: TokenInfo, amountToSpend: BigDecimal): F[Unit] = {
       val priceWithSpread = maxPrice(info.price)
 
-      if (amountToSpend <= 1 || priceWithSpread <= 0) Async[F].unit
+      if (amountToSpend < 1 || priceWithSpread <= 0) Async[F].unit
       else
         tradingClient.balance().flatMap { currentBalance =>
           val spend = amountToSpend min currentBalance

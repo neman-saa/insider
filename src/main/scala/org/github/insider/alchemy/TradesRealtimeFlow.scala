@@ -66,9 +66,9 @@ class TradesRealtimeFlow[F[_]: Async](
           s"Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
         )
 
-        trades = (standardCtfTrades ++ negRiskCtfTrades).filter(trade =>
-          trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97
-        )
+        trades = (standardCtfTrades ++ negRiskCtfTrades)
+          .filter(trade => trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97)
+          .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
         leaderboard       <- leaderboards.getLeaderboard
         tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
