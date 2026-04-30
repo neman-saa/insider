@@ -2,6 +2,7 @@ package org.github.insider.alchemy.processors
 
 import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTransfer}
 import org.github.insider.alchemy.domain.dto.TokenCategory.ERC1155
+import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 import org.github.insider.polymarket.domain.Side
 import org.github.insider.polymarket.domain.Trade
 import weaver.SimpleIOSuite
@@ -10,7 +11,7 @@ object TransfersProcessorImplSpec extends SimpleIOSuite {
 
   private val CTFAddress = "0xc5d563a36ae78145c45a50134d48a1215220f80a"
 
-  private val processor = TransfersProcessorImpl()
+  private val processor = TransfersProcessorImpl(PolygonContracts(CTFAddress, CTFAddress, Set.empty))
 
   pureTest("extract trades from 4 transfers between 2 wallets with 1 asset") {
 

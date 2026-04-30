@@ -36,20 +36,17 @@ object WalletSpec extends SimpleIOSuite {
     prices: Map[String, BigDecimal],
   ) extends TradingClient[IO] {
 
-    override def buy(tokenId: String, amount: BigDecimal, maxPrice: Option[BigDecimal]): IO[BuyOrderResult] = {
-      val price = maxPrice.getOrElse(prices(tokenId))
-
+    override def buy(tokenId: String, money: BigDecimal, maxPrice: Option[BigDecimal]): IO[BuyOrderResult] = {
+      val price  = maxPrice.getOrElse(prices(tokenId))
+      val bought = if (price > 0) money / price else BigDecimal(0)
       for {
-        balance <- balanceR.get
-        cost     = (amount * price).min(balance)
-        bought   = if (price > 0) cost / price else BigDecimal(0)
         _ <- positionsR.update { positions =>
           val currentSize = positions.find(_.asset == tokenId).fold(BigDecimal(0))(_.size)
           Position(tokenId, currentSize + bought) :: positions.filterNot(_.asset == tokenId)
         }
-        _ <- balanceR.update(_ - cost)
+        _ <- balanceR.update(_ - money)
         _ <- operationsR.update(_ :+ Operation.Buy(tokenId, bought, maxPrice))
-      } yield BuyOrderResult(bought, cost)
+      } yield BuyOrderResult(bought, money)
     }
 
     override def sell(tokenId: String, shares: BigDecimal, minPrice: Option[BigDecimal]): IO[SellOrderResult] = {

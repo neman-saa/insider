@@ -50,7 +50,7 @@ final class Wallet[F[_]: Async] private (
       if (shares <= 0) Async[F].unit
       else
         tradingClient
-          .sell(holding.asset, shares, Option.when(holding.price > 0)(minPrice(holding.price)))
+          .sell(holding.asset, shares, None)
           .void
           .handleErrorWith(error =>
             logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped")
@@ -62,17 +62,13 @@ final class Wallet[F[_]: Async] private (
       if (amountToSpend <= 0 || priceWithSpread <= 0) Async[F].unit
       else
         tradingClient.balance().flatMap { currentBalance =>
-          val spend  = amountToSpend.min(currentBalance)
-          val shares = spend / priceWithSpread
-
-          if (shares <= 0) Async[F].unit
+          val spend = amountToSpend min currentBalance
+          if (spend == 0) ().pure[F]
           else
             tradingClient
-              .buy(asset, shares, Some(priceWithSpread))
+              .buy(asset, spend, Some(priceWithSpread))
               .void
-              .handleErrorWith(error =>
-                logger.warn(error)(s"Could not buy $asset for amount=$spend, operation skipped")
-              )
+              .handleErrorWith(error => logger.warn(error)(s"Could not buy $asset for money=$spend, operation skipped"))
         }
     }
 
