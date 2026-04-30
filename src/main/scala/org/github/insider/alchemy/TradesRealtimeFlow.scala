@@ -12,9 +12,7 @@ import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.Leaderboards
-import org.github.insider.polymarket.configs.MainConfig.AlchemyConfig
-import org.github.insider.polymarket.domain.Trade
-import org.github.insider.leaderboard.TradeNotification
+import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.EventsCached
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepository}
@@ -25,18 +23,18 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
-class TradesRealtimeFlow[F[_]: Async: Parallel](
+class TradesRealtimeFlow[F[_]: Async](
   client: TransfersClient[F],
   transfersProcessor: TransfersProcessor,
   tradesRepository: TradesRepository[F],
   aggregatedRepository: AggregatedTradesRepository[F],
   tokensInfoRepository: TokensInfoRepository[F],
-  alchemyConfig: AlchemyConfig,
   tgBot: InsiderTelegramBot[F],
   leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
   eventsCached: EventsCached[F],
   tokensInfoRegistry: TokensInfoRegistry[F],
-  wallet: Wallet[F]
+  wallet: Wallet[F],
+  polygonContracts: PolygonContracts,
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -47,10 +45,30 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
       for {
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 100
-        transfers            <- getAssetsTransfersInRange(fromBlock = latestProcessedBlock + 1, toBlock = toBlock)
-        trades = transfersProcessor
-          .extractTradesFrom(transfers)
-          .filter(trade => trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97)
+
+        standardCtfTransfers <- getAssetsTransfersInRange(
+          fromBlock = latestProcessedBlock + 1,
+          toBlock   = toBlock,
+          contract  = polygonContracts.standardCtf,
+        )
+        negRiskCtfTransfers <- getAssetsTransfersInRange(
+          fromBlock = latestProcessedBlock + 1,
+          toBlock   = toBlock,
+          contract  = polygonContracts.negRiskCtf,
+        )
+        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers)
+        negRiskCtfTrades  = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+
+        _ <- logger.info(
+          s"CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+        )
+        _ <- logger.info(
+          s"Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
+        )
+
+        trades = (standardCtfTrades ++ negRiskCtfTrades).filter(trade =>
+          trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97
+        )
 
         leaderboard       <- leaderboards.getLeaderboard
         tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
@@ -60,19 +78,13 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
         _        <- tradesNel.fold(0.pure[F])(tradesRepository.insert)
         _        <- tradesNel.fold(0.pure[F])(aggregatedRepository.insert)
 
-        tokensInfoNel   = NonEmptyList.fromList(updatedTokensInfo)
-        _              <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
-        _              <- wallet.updateWallet()
-        nextLatestBlock = transfers.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
-        _              <- latestProcessedBlockR.set(nextLatestBlock)
+        tokensInfoNel = NonEmptyList.fromList(updatedTokensInfo)
+        _            <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
 
-        tradesForNotifications = trades.filter(trade => leaderboard.keySet.map(_.value).contains(trade.makerAddress))
-        notifications <- tradesForNotifications.traverse { trade =>
-          eventsCached.getEvent(trade.tokenId).map { maybeEvent =>
-            TradeNotification(trade, List.empty, maybeEvent, Set.empty)
-          }
-        }
-        _ <- tgBot.sendNotifications(notifications)
+        _ <- wallet.updateWallet()
+
+        nextLatestBlock = trades.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
+        _              <- latestProcessedBlockR.set(nextLatestBlock)
 
         _ <- appHealthCheckViaTgBot(latestHealthCheckInstantR)
 
@@ -96,7 +108,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
     } yield ()
   }
 
-  private def getAssetsTransfersInRange(fromBlock: Long, toBlock: Long): F[List[AssetTransfer]] = {
+  private def getAssetsTransfersInRange(fromBlock: Long, toBlock: Long, contract: String): F[List[AssetTransfer]] = {
     def rec(
       transfers: List[AssetTransfer],
       page: Option[String],
@@ -123,8 +135,8 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
 
     for {
       _             <- logger.info(s"Starting extraction for range [$fromBlock - $toBlock]")
-      transfersTo   <- rec(Nil, None, Some(alchemyConfig.ctfAddress), None)
-      transfersFrom <- rec(Nil, None, None, Some(alchemyConfig.ctfAddress))
+      transfersTo   <- rec(Nil, None, Some(contract), None)
+      transfersFrom <- rec(Nil, None, None, Some(contract))
       transfers      = transfersTo.reverse ++ transfersFrom.reverse
       _ <- logger.info(s"Finished extraction for range [$fromBlock - $toBlock] with ${transfers.size} transfers")
     } yield transfers
@@ -139,7 +151,7 @@ class TradesRealtimeFlow[F[_]: Async: Parallel](
       latestHealthCheckInstantSeconds = latestHealthCheckInstant.getEpochSecond
       delta                           = nowSeconds - latestHealthCheckInstantSeconds
 
-      _ <- Applicative[F].whenA(delta > 1800)(tgBot.sendAlive >> latestHealthCheckInstantR.set(now))
+      _ <- Applicative[F].whenA(delta > 3600)(tgBot.sendAlive >> latestHealthCheckInstantR.set(now))
     } yield ()
 }
 
@@ -150,12 +162,12 @@ object TradesRealtimeFlow {
     tradesRepository: TradesRepository[F],
     aggregatedRepository: AggregatedTradesRepository[F],
     tokensInfoRepository: TokensInfoRepository[F],
-    alchemyConfig: AlchemyConfig,
     tgBot: InsiderTelegramBot[F],
     leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
     eventsCached: EventsCached[F],
     tokensInfoRegistry: TokensInfoRegistry[F],
-    wallet: Wallet[F]
+    wallet: Wallet[F],
+    polygonContracts: PolygonContracts,
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -166,12 +178,12 @@ object TradesRealtimeFlow {
           tradesRepository,
           aggregatedRepository,
           tokensInfoRepository,
-          alchemyConfig,
           tgBot,
           leaderboards,
           eventsCached,
           tokensInfoRegistry,
-          wallet
+          wallet,
+          polygonContracts,
         )(logger)
       )
 }

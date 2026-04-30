@@ -5,19 +5,11 @@ import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTra
 import org.github.insider.polymarket.domain.Side.{Buy, Sell}
 import org.github.insider.polymarket.domain.Trade
 import cats.syntax.all._
+import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 
 import scala.annotation.tailrec
 
-private class TransfersProcessorImpl extends TransfersProcessor {
-
-  private val CTFAddress = "0xc5d563a36ae78145c45a50134d48a1215220f80a"
-
-  private val FilterOutAddresses =
-    Set(
-      "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296", // burn-mint address
-      "0x3a3bd7bb9528e159577f7c2e685cc81a765002e2", // collateral address
-      "0x0000000000000000000000000000000000000000", // null address
-    )
+private class TransfersProcessorImpl(polygonContracts: PolygonContracts) extends TransfersProcessor {
 
   override def extractTradesFrom(transfers: List[AssetTransfer]): List[Trade] = {
     val transfersGroupedByBlockNum = transfers.groupBy(_.blockNum)
@@ -57,8 +49,8 @@ private class TransfersProcessorImpl extends TransfersProcessor {
                 }
                 .map {
                   case (erc, ercIndex) =>
-                    val makerAddress = if (usdc.to == CTFAddress) usdc.from else usdc.to
-                    val side         = if (usdc.from == CTFAddress) Sell else Buy
+                    val makerAddress = if (polygonContracts.ctfs.contains(usdc.to)) usdc.from else usdc.to
+                    val side         = if (polygonContracts.ctfs.contains(usdc.from)) Sell else Buy
 
                     Trade(
                       makerAddress   = makerAddress,
@@ -127,10 +119,10 @@ private class TransfersProcessorImpl extends TransfersProcessor {
 
         val filteredUsdcs =
           usdcTfs.filter { usdc =>
-            !(FilterOutAddresses.contains(usdc.from) || FilterOutAddresses.contains(usdc.to))
+            !(polygonContracts.filterOut.contains(usdc.from) || polygonContracts.filterOut.contains(usdc.to))
           }
         val filteredErcs = erc1155Tfs.filter { erc1155 =>
-          !(FilterOutAddresses.contains(erc1155.from) || FilterOutAddresses.contains(erc1155.to))
+          !(polygonContracts.filterOut.contains(erc1155.from) || polygonContracts.filterOut.contains(erc1155.to))
         }
 
         matchTransfers(filteredUsdcs, filteredErcs, txIndex)
@@ -139,5 +131,5 @@ private class TransfersProcessorImpl extends TransfersProcessor {
 }
 
 object TransfersProcessorImpl {
-  def apply(): TransfersProcessor = new TransfersProcessorImpl
+  def apply(polygonContracts: PolygonContracts): TransfersProcessor = new TransfersProcessorImpl(polygonContracts)
 }

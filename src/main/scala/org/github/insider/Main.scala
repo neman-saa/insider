@@ -49,7 +49,7 @@ object Main extends IOApp.Simple {
         .withInit[IO](tokensInfoRepository, cleanUpPeriod = 5.minutes, config.wallets.secondsToSellBeforeResolve)
         .toResource
 
-      transfersProcessor = TransfersProcessorImpl()
+      transfersProcessor = TransfersProcessorImpl(config.polygonContracts)
 
       followTokens <- Ref.empty[IO, Map[String, Set[String]]].toResource
 
@@ -66,9 +66,8 @@ object Main extends IOApp.Simple {
           transfersProcessor,
           tradesRepository,
           aggregatedTradesRepository,
-          config.alchemy.ctfAddress,
-          step = 300
-        )(nWorkers = 5)
+          config.polygonContracts,
+        )(step = 100, nWorkers = 5)
         .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
       leaderboards <- Leaderboards.make[IO, AdvancedLeaderboardEntry](
@@ -93,12 +92,12 @@ object Main extends IOApp.Simple {
           tradesRepository,
           aggregatedTradesRepository,
           tokensInfoRepository,
-          config.alchemy,
           insiderBot,
           leaderboards,
           eventsCached,
           tokensInfoRegistry,
-          wallet
+          wallet,
+          config.polygonContracts,
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
@@ -111,7 +110,7 @@ object Main extends IOApp.Simple {
           _      <- logger.info("Application started after successful resource acquisition...")
 
           // _ <- eventsWorker.extractAllClosedEvents
-          // _ <- tradesWorker.run(83_934_808, 84_295_753)
+          // _ <- tradesWorker.run(86_200_414, 86_208_414)
 
           _ <- (realtimeTrades.runForever, realtimeEvents.runForever).parTupled
         } yield ()

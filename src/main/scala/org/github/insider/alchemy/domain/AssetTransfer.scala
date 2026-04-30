@@ -31,8 +31,8 @@ object AssetTransfer {
           value       <- transfer.value
         } yield USDCTransfer(
           blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
-          from           = from,
-          to             = to,
+          from           = from.toLowerCase,
+          to             = to.toLowerCase,
           hash           = hash,
           blockTimestamp = transfer.metadata.flatMap(_.blockTimestamp),
           value          = value,
@@ -48,8 +48,8 @@ object AssetTransfer {
           tokenId     <- transfer.erc1155Metadata.headOption.flatMap(_.tokenId)
         } yield ERC1155Transfer(
           blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
-          from           = from,
-          to             = to,
+          from           = from.toLowerCase,
+          to             = to.toLowerCase,
           hash           = hash,
           blockTimestamp = transfer.metadata.flatMap(_.blockTimestamp),
           value          = value,
@@ -63,8 +63,8 @@ object AssetTransfer {
           hash        <- transfer.hash
         } yield UnknownTransfer(
           blockNum       = java.lang.Long.parseLong(blockNumHex.stripPrefix("0x"), 16),
-          from           = from,
-          to             = to,
+          from           = from.toLowerCase,
+          to             = to.toLowerCase,
           hash           = hash,
           blockTimestamp = transfer.metadata.flatMap(_.blockTimestamp),
           category       = transfer.category,

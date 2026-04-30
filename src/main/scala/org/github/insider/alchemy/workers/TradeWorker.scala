@@ -11,18 +11,18 @@ import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
+import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 
 class TradeWorker[F[_]: Async](
   latestProcessedBlockR: Ref[F, Int],
   finalBlock: Int,
   logger: Logger[F],
   client: TransfersClient[F],
-  ctfAddress: String,
-  step: Int,
   transfersProcessor: TransfersProcessor,
   tradesRepository: TradesRepository[F],
-  aggregatedRepository: AggregatedTradesRepository[F]
-)(workerNumber: Int) {
+  aggregatedRepository: AggregatedTradesRepository[F],
+  polygonContracts: PolygonContracts,
+)(step: Int, workerNumber: Int) {
   def run: F[Unit] =
     latestProcessedBlockR.getAndUpdate(_ + step).flatMap { latestProcessedBlock =>
       if (latestProcessedBlock >= finalBlock)
@@ -33,10 +33,20 @@ class TradeWorker[F[_]: Async](
 
   private def runRange(fromBlock: Int, toBlock: Int): F[Unit] = {
     for {
-      transfers <- getAssetsTransfersInRange(fromBlock, toBlock)
-      trades     = transfersProcessor.extractTradesFrom(transfers)
+      _ <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - $toBlock")
+
+      standardCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.standardCtf)
+      standardCtfTrades     = transfersProcessor.extractTradesFrom(standardCtfTransfers)
+      negRiskCtfTransfers  <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.negRiskCtf)
+      negRiskCtfTrades      = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+
+      trades = standardCtfTrades ++ negRiskCtfTrades
+
       _ <- logger.info(
-        s"[worker-$workerNumber] Transfers fetched - ${transfers.size}, trades extracted - ${trades.size}"
+        s"[worker-$workerNumber] CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+      )
+      _ <- logger.info(
+        s"[worker-$workerNumber] Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
       )
 
       nel = NonEmptyList.fromList(trades)
@@ -47,7 +57,7 @@ class TradeWorker[F[_]: Async](
     } yield ()
   }
 
-  private def getAssetsTransfersInRange(fromBlock: Int, toBlock: Int): F[List[AssetTransfer]] = {
+  private def getAssetsTransfersInRange(fromBlock: Int, toBlock: Int, contract: String): F[List[AssetTransfer]] = {
     def rec(
       transfers: List[AssetTransfer],
       page: Option[String],
@@ -73,11 +83,9 @@ class TradeWorker[F[_]: Async](
     }
 
     for {
-      _             <- logger.info(s"Starting range $fromBlock - $toBlock")
-      transfersTo   <- rec(Nil, None, Some(ctfAddress), None)
-      transfersFrom <- rec(Nil, None, None, Some(ctfAddress))
+      transfersTo   <- rec(Nil, None, Some(contract), None)
+      transfersFrom <- rec(Nil, None, None, Some(contract))
       transfers      = transfersTo.reverse ++ transfersFrom.reverse
-      _             <- logger.info(s"Transfers fetched - ${transfers.size}")
     } yield transfers
   }
 }
@@ -87,12 +95,12 @@ object TradeWorker {
     fromBlock: Ref[F, Int],
     toBlock: Int,
     transfersClient: TransfersClient[F],
-    ctfAddress: String,
-    step: Int,
     transfersProcessor: TransfersProcessor,
     tradesRepository: TradesRepository[F],
-    aggregatedRepository: AggregatedTradesRepository[F]
+    aggregatedRepository: AggregatedTradesRepository[F],
+    polygonContracts: PolygonContracts,
   )(
+    step: Int,
     workerNumber: Int
   ): F[TradeWorker[F]] =
     Slf4jLogger
@@ -103,12 +111,12 @@ object TradeWorker {
           toBlock,
           logger,
           transfersClient,
-          ctfAddress,
-          step,
           transfersProcessor,
           tradesRepository,
-          aggregatedRepository
+          aggregatedRepository,
+          polygonContracts,
         )(
+          step: Int,
           workerNumber
         )
       )

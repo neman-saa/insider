@@ -3,7 +3,13 @@ package org.github.insider.polymarket.configs
 import cats.effect.kernel.{Resource, Sync}
 import cats.syntax.all._
 import com.bot4s.telegram.models.ChatId
-import org.github.insider.polymarket.configs.MainConfig.{AlchemyConfig, PolymarketConfig, TelegramConfig, WalletsConfig}
+import org.github.insider.polymarket.configs.MainConfig.{
+  AlchemyConfig,
+  PolygonContracts,
+  PolymarketConfig,
+  TelegramConfig,
+  WalletsConfig
+}
 import pureconfig.error.ExceptionThrown
 import pureconfig.{ConfigReader, ConfigSource}
 import pureconfig.generic.semiauto.deriveReader
@@ -14,6 +20,7 @@ import scala.util.Try
 final case class MainConfig(
   dbConfig: DbConfig,
   alchemy: AlchemyConfig,
+  polygonContracts: PolygonContracts,
   telegram: TelegramConfig,
   polymarket: PolymarketConfig,
   wallets: WalletsConfig
@@ -22,10 +29,15 @@ final case class MainConfig(
 object MainConfig {
   final case class AlchemyConfig(
     apiKey: String,
-    ctfAddress: String,
-    collateralAddress: String,
-    burnMintAddress: String
   )
+
+  final case class PolygonContracts(
+    standardCtf: String,
+    negRiskCtf: String,
+    filterOut: Set[String],
+  ) {
+    val ctfs: Set[String] = Set(standardCtf, negRiskCtf)
+  }
 
   final case class TelegramConfig(
     chatId: ChatId,
@@ -58,7 +70,8 @@ object MainConfig {
 
     deriveReader
   }
-  implicit val alchemyConfigReader: ConfigReader[AlchemyConfig] = deriveReader
+  implicit val alchemyConfigReader: ConfigReader[AlchemyConfig]             = deriveReader
+  implicit val polygonContractsConfigReader: ConfigReader[PolygonContracts] = deriveReader
 
   implicit val mainConfigReader: ConfigReader[MainConfig] = deriveReader
 
