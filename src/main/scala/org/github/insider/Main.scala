@@ -1,14 +1,13 @@
 package org.github.insider
 
 import cats.effect.{IO, IOApp, Ref}
-import cats.implicits.catsSyntaxTuple2Parallel
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
-import org.github.insider.leaderboard.LeaderboardEntry.{AdvancedLeaderboardEntry, SimpleLeaderboardEntry}
-import org.github.insider.leaderboard.strategy.{RoiNoTradersStrategyCh, WinRateLeaderboardStrategyCH}
+import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
+import org.github.insider.leaderboard.strategy.RoiNoTradersStrategyCh
 import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
@@ -46,7 +45,12 @@ object Main extends IOApp.Simple {
 
       tokensInfoRepository <- TokensInfoRepositoryImpl.of[IO](transactor).toResource
       tokensInfoRegistry <- TokensInfoRegistry
-        .withInit[IO](tokensInfoRepository, cleanUpPeriod = 5.minutes, config.wallets.secondsToSellBeforeResolve)
+        .withInit[IO](
+          tokensInfoRepository,
+          cleanUpPeriod = 5.minutes,
+          config.wallets.secondsToSellBeforeResolve,
+          config.wallets.marketsAmount
+        )
         .toResource
 
       transfersProcessor = TransfersProcessorImpl(config.polygonContracts)
@@ -83,8 +87,7 @@ object Main extends IOApp.Simple {
           tokensInfoRegistry,
           tradingClient,
           config.wallets.marketsAmount,
-          config.wallets.sellThresholdPercent,
-          config.wallets.spreadPercent
+          config.wallets.sellThresholdPercent
         )
         .toResource
 
@@ -99,15 +102,14 @@ object Main extends IOApp.Simple {
           leaderboards,
           eventsCached,
           tokensInfoRegistry,
-          wallet,
           config.polygonContracts,
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
-    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker)
+    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config)
 
     resource use {
-      case (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker) =>
+      case (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
@@ -115,7 +117,11 @@ object Main extends IOApp.Simple {
           // _ <- eventsWorker.extractAllClosedEvents
           // _ <- tradesWorker.run(86_200_414, 86_208_414)
 
-          _ <- (realtimeTrades.runForever, realtimeEvents.runForever).parTupled
+          _ <- (
+            realtimeTrades.runForever,
+            realtimeEvents.runForever,
+            wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
+          ).parTupled
         } yield ()
     }
   }

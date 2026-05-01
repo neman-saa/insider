@@ -146,6 +146,7 @@ private class TradingClientImpl[F[_]: Async](
       DataApiHost
         .addSegment("positions")
         .withQueryParam("user", user.getOrElse(userAddress))
+        .withQueryParam("redeemable", false)
 
     client.get[List[Position]](uri) {
       case Status.Successful(response) => response.as[List[Position]]

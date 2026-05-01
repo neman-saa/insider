@@ -27,12 +27,24 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .flatTap(rows => logger.info(s"Inserted $rows tokens info in 'tokens_info' table"))
       .void
 
+  override def getForTokens(tokens: List[String]): F[Map[String, TokenInfo]] =
+    fr"""
+        |SELECT id, price, score, resolve_date, last_updated_block_num
+        |FROM tokens_info FINAL
+        |WHERE id in $tokens
+      """
+      .stripMargin
+      .query[TokenInfo]
+      .to[List]
+      .transact(transactor)
+      .map { lst => lst.map { info => info.id -> info }.toMap }
+
   override def select(now: Instant): F[List[TokenInfo]] =
     fr"""
         |SELECT id, price, score, resolve_date, last_updated_block_num
         |FROM tokens_info FINAL
         |WHERE resolve_date > $now
-        |"""
+      """
       .stripMargin
       .query[TokenInfo]
       .to[List]

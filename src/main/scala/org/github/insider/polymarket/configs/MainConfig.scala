@@ -48,7 +48,8 @@ object MainConfig {
     marketsAmount: Int,
     secondsToSellBeforeResolve: Int,
     sellThresholdPercent: Int,
-    spreadPercent: Int
+    spreadPercent: Int,
+    updateEveryMinutes: Int
   )
 
   case class PolymarketConfig(clobAddress: String, userAddress: String, bearer: String)

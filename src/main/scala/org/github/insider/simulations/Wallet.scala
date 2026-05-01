@@ -16,7 +16,7 @@ final case class Wallet(
   activeFromBlock: Int,
   activeToBlock: Option[Int],
   operations: List[Operation],
-  currentBlock: Long
+  currentBlock: Long,
 ) { self =>
 
   /** Returns updated wallet if buy succeeds, otherwise returns None */

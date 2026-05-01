@@ -33,7 +33,6 @@ class TradesRealtimeFlow[F[_]: Async](
   leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
   eventsCached: EventsCached[F],
   tokensInfoRegistry: TokensInfoRegistry[F],
-  wallet: Wallet[F],
   polygonContracts: PolygonContracts,
 )(logger: Logger[F]) {
 
@@ -80,8 +79,6 @@ class TradesRealtimeFlow[F[_]: Async](
 
         tokensInfoNel = NonEmptyList.fromList(updatedTokensInfo)
         _            <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
-
-        _ <- wallet.updateWallet()
 
         nextLatestBlock = trades.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
@@ -166,7 +163,6 @@ object TradesRealtimeFlow {
     leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
     eventsCached: EventsCached[F],
     tokensInfoRegistry: TokensInfoRegistry[F],
-    wallet: Wallet[F],
     polygonContracts: PolygonContracts,
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
@@ -182,7 +178,6 @@ object TradesRealtimeFlow {
           leaderboards,
           eventsCached,
           tokensInfoRegistry,
-          wallet,
           polygonContracts,
         )(logger)
       )
