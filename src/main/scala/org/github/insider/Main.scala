@@ -1,6 +1,7 @@
 package org.github.insider
 
 import cats.effect.{IO, IOApp, Ref}
+import cats.syntax.all._
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl

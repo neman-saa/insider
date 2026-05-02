@@ -8,4 +8,5 @@ trait TokensInfoRepository[F[_]] {
   def insert(tokens: NonEmptyList[TokenInfo]): F[Unit]
   def select(now: Instant): F[List[TokenInfo]]
   def getForTokens(tokens: List[String]): F[Map[String, TokenInfo]]
+  def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): F[Unit]
 }

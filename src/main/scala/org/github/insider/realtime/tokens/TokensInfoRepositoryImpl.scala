@@ -29,7 +29,7 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
 
   override def getForTokens(tokens: List[String]): F[Map[String, TokenInfo]] =
     fr"""
-        |SELECT id, price, score, resolve_date, last_updated_block_num
+        |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
         |FROM tokens_info FINAL
         |WHERE id in $tokens
       """
@@ -41,7 +41,7 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
 
   override def select(now: Instant): F[List[TokenInfo]] =
     fr"""
-        |SELECT id, price, score, resolve_date, last_updated_block_num
+        |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
         |FROM tokens_info FINAL
         |WHERE resolve_date > $now
       """
@@ -49,6 +49,13 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .query[TokenInfo]
       .to[List]
       .transact(transactor)
+
+  override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): F[Unit] =
+    fr"UPDATE tokens_info SET buy_time = $buyTime, buy_price = $buyPrice WHERE id = $tokenId"
+      .update
+      .run
+      .transact(transactor)
+      .void
 }
 
 object TokensInfoRepositoryImpl {

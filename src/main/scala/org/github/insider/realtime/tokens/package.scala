@@ -11,6 +11,15 @@ package object tokens {
     score: BigDecimal,
     resolveDate: Instant,
     lastUpdatedBlock: Long,
+    buyPrice: Option[BigDecimal],
+    buyTime: Option[Instant]
+  )
+
+  final case class TokenInfoShort(
+    id: String,
+    efficiency: BigDecimal,
+    buyTime: Option[Instant],
+    price: BigDecimal
   )
 
   final case class TokenMetaInfo(

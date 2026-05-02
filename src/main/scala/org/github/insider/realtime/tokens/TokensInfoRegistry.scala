@@ -8,6 +8,7 @@ import org.github.insider.leaderboard.HexAddress
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.polymarket.domain.Trade
 
+import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
 final class TokensInfoRegistry[F[_]: Sync] private (
@@ -38,22 +39,26 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               case None => BigDecimal(0)
             }
 
-            val tokenScore         = registry.get(trade.tokenId).map(_.score).getOrElse(BigDecimal(0))
-            val oppositeTokenScore = registry.get(metaInfo.oppositeTokenId).map(_.score).getOrElse(BigDecimal(0))
+            val tokenInfo         = registry.get(trade.tokenId)
+            val oppositeTokenInfo = registry.get(metaInfo.oppositeTokenId)
 
             val updatedTokenInfo = TokenInfo(
               id               = trade.tokenId,
               price            = trade.singleTokenPrice,
-              score            = tokenScore + scoreFromLeader,
+              score            = tokenInfo.fold(BigDecimal(0))(_.score) + scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
+              buyPrice = tokenInfo.flatMap(_.buyPrice),
+              buyTime = tokenInfo.flatMap(_.buyTime)
             )
             val updatedOppositeTokenInfo = TokenInfo(
               id               = metaInfo.oppositeTokenId,
               price            = 1 - trade.singleTokenPrice,
-              score            = oppositeTokenScore - scoreFromLeader,
+              score            = oppositeTokenInfo.fold(BigDecimal(0))(_.score) - scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
+              buyPrice = oppositeTokenInfo.flatMap(_.buyPrice),
+              buyTime = oppositeTokenInfo.flatMap(_.buyTime)
             )
 
             val updatedRegistry =
@@ -67,7 +72,14 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     }
   }
 
-  def topTokensInfo: F[List[(TokenId, (BigDecimal, BigDecimal))]] = {
+  def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
+    registryR.update{ map =>
+      val info = map(tokenId)
+      val newInfo = info.copy(buyPrice = Some(buyPrice), buyTime = Some(buyTime))
+      map + (tokenId -> newInfo)
+    } >> tokenInfos.setBuyPriceTime(tokenId, buyPrice, buyTime)
+
+  def topTokensInfo: F[List[(TokenId, TokenInfoShort)]] = {
     for {
       now      <- Clock[F].realTimeInstant
       registry <- registryR.get
@@ -82,20 +94,20 @@ final class TokensInfoRegistry[F[_]: Sync] private (
             val timeToResolve = (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
             val efficiency    = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
-            tokenId -> (tokenInfo.price, efficiency)
+            tokenId -> TokenInfoShort(tokenInfo.id, efficiency, tokenInfo.buyTime, tokenInfo.price)
         }
         .toList
         .filter {
-          case (_, (_, efficiency)) => efficiency > 0
+          case (_, TokenInfoShort(_, efficiency, _, _)) => efficiency > 0
         }
         .sortBy {
-          case (_, (_, efficiency)) => -efficiency
+          case (_, TokenInfoShort(_, efficiency, _, _)) => -efficiency
         }
         .take(marketsAmount)
     }
   }
 
-  def tokensInfoForTokens(tokens: List[String]): F[Map[TokenId, (BigDecimal, BigDecimal)]] = {
+  def tokensInfoForTokens(tokens: List[String]): F[Map[TokenId, TokenInfoShort]] = {
     Clock[F]
       .realTimeInstant
       .flatMap(now =>
@@ -108,7 +120,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
                 (if(tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
 
-              tokenId -> (tokenInfo.price, efficiency)
+              tokenId -> TokenInfoShort(tokenId, efficiency, tokenInfo.buyTime, tokenInfo.price)
           })
       )
   }

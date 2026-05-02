@@ -2,12 +2,13 @@ package org.github.insider.realtime.wallets
 
 import cats.effect.{Async, Clock}
 import org.github.insider.polymarket.client.TradingClient
-import org.github.insider.realtime.tokens.{TokenInfo, TokensInfoRegistry}
+import org.github.insider.realtime.tokens.{TokenInfo, TokenInfoShort, TokensInfoRegistry}
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
 import org.github.insider.polymarket.domain.Position
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
 final class Wallet[F[_]: Async] private (
@@ -25,27 +26,35 @@ final class Wallet[F[_]: Async] private (
 
   def performOperations(): F[Unit] = {
 
-    final case class TokenPriceEfficiency(price: BigDecimal, efficiency: BigDecimal)
-    final case class Holding(asset: String, size: BigDecimal, price: BigDecimal, efficiency: BigDecimal) {
+    final case class Holding(
+      asset: String,
+      size: BigDecimal,
+      price: BigDecimal,
+      efficiency: BigDecimal,
+      buyTime: Option[Instant]
+    ) {
       def totalPrice: BigDecimal = size * price
     }
+
+    def isNew(holding: Holding, time: Instant): Boolean =
+      holding.buyTime.forall(time.getEpochSecond - _.getEpochSecond > 1800)
 
     def isBetterMoreThanThreshold(candidateEfficiency: BigDecimal, currentEfficiency: BigDecimal): Boolean =
       candidateEfficiency > currentEfficiency * (BigDecimal(100 + thresholdPercent) / 100)
 
-    def toHolding(position: Position, tokenInfos: Map[String, TokenPriceEfficiency]): Holding = {
+    def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .getOrElse(position.asset, TokenPriceEfficiency(0, -1))
-      Holding(position.asset, position.size, info.price, info.efficiency)
+        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0))
+      Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime)
     }
-    def trySell(holding: Holding, shares: BigDecimal): F[Unit] =
+    def trySell(asset: String, shares: BigDecimal): F[Unit] =
       if (shares <= 0) Async[F].unit
       else
         tradingClient
-          .sell(holding.asset, shares, None)
+          .sell(asset, shares, None)
           .void
           .handleErrorWith(error =>
-            logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped")
+            logger.warn(error)(s"Could not sell $asset shares=$shares, operation skipped")
           )
 
     def tryBuy(asset: String, money: BigDecimal): F[Unit] = {
@@ -64,88 +73,110 @@ final class Wallet[F[_]: Async] private (
       val excessPrice = holding.totalPrice - maxMarketPrice
       val shares      = if (holding.price > 0) excessPrice / holding.price else BigDecimal(0)
 
-      trySell(holding, shares)
+      trySell(holding.asset, shares)
     }
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
         positions <- tradingClient.positions()
         infos <-
-          if (positions.isEmpty) Map.empty[String, (BigDecimal, BigDecimal)].pure[F]
+          if (positions.isEmpty) Map.empty[String, TokenInfoShort].pure[F]
           else tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
 
-        tokensPE = infos.map { case (id, (price, efficiency)) => id -> TokenPriceEfficiency(price, efficiency) }
-      } yield positions.map(position => toHolding(position, tokensPE))
+      } yield positions.map(position => toHolding(position, infos))
     }
 
     def totalBalance(currentBalance: BigDecimal, holdings: List[Holding]): BigDecimal =
       currentBalance + holdings.map(_.totalPrice).sum
+
     for {
+      now             <- Clock[F].realTimeInstant
       topInfos        <- tokensInfoRegistry.topTokensInfo
       currentHoldings <- currentHoldingsF().map(_.sortBy(holding => -holding.efficiency))
-      topTokens = topInfos.map { case (id, (price, efficiency)) => id -> TokenPriceEfficiency(price, efficiency) }
-      ourTopMarkets =
+
+      (ourPositive, _) =
         currentHoldings
-          .filter(_.efficiency > 0)
-          .take(marketsAmount)
+          .partition(_.efficiency > 0)
+
+      (ourNew, ourOld) = ourPositive.partition(now.getEpochSecond - _.buyTime.getOrElse(now).getEpochSecond < 1800)
+
+      ourTopMarkets = ourNew ++ ourOld.sortBy(-_.efficiency).take(marketsAmount - ourNew.length)
 
       ourRedundantMarkets =
         currentHoldings.filter(holding => !ourTopMarkets.map(_.asset).contains(holding.asset))
 
-      topTokensIds = topTokens.map(_._1)
+      topTokensIds = topInfos.map(_._1)
 
-      (ourFromTopInfos, maybeOurToChange) =
+      (_, maybeOurToChange) =
         ourTopMarkets.partition(holding => topTokensIds.contains(holding.asset))
 
       topInfoCandidates =
-        topTokens.filterNot { case (asset, _) => ourTopMarkets.exists(_.asset == asset) }
+        topInfos.filterNot { case (asset, _) => ourTopMarkets.exists(_.asset == asset) }
 
-      (changedMarkets, unchangedMarkets) =
+      (toBuyMarkets, toSellMarkets, _, updateEffect) =
         topInfoCandidates
-          .foldLeft((ourFromTopInfos, maybeOurToChange.sortBy(_.efficiency))) {
-            case ((keptMarkets, remainingToChange), (candidateAsset, candidateInfo)) =>
+          .foldLeft((List.empty[TokenInfoShort], List.empty[Holding], maybeOurToChange.sortBy(_.efficiency), ().pure[F])) {
+
+            case ((toBuyMarkets, toSellMarkets, remainingToChange, updateEffect), (candidateAsset, candidateInfo)) =>
               remainingToChange match {
+
+                case worst :: rest
+                    if isBetterMoreThanThreshold(candidateInfo.efficiency, worst.efficiency) &&
+                      !isNew(worst, now) =>
+                  (
+                    candidateInfo :: toBuyMarkets,
+                    worst :: toSellMarkets,
+                    rest,
+                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateAsset, now, candidateInfo.price)
+                  )
+
                 case worst :: rest if isBetterMoreThanThreshold(candidateInfo.efficiency, worst.efficiency) =>
-                  (Holding(candidateAsset, 0, candidateInfo.price, candidateInfo.efficiency) :: keptMarkets, rest)
-                case Nil if keptMarkets.size < marketsAmount =>
-                  (Holding(candidateAsset, 0, candidateInfo.price, candidateInfo.efficiency) :: keptMarkets, Nil)
+                  (
+                    toBuyMarkets,
+                    toSellMarkets,
+                    rest,
+                    updateEffect
+                  )
+
+                case Nil if topTokensIds.length + toBuyMarkets.length - toSellMarkets.length < marketsAmount =>
+                  (
+                    candidateInfo :: toBuyMarkets,
+                    toSellMarkets,
+                    Nil,
+                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateAsset, now, candidateInfo.price)
+                  )
+
                 case _ =>
-                  (keptMarkets, remainingToChange)
+                  (toBuyMarkets, toSellMarkets, remainingToChange, updateEffect)
               }
           }
 
-      targetMarkets =
-        (changedMarkets ++ unchangedMarkets)
-          .sortBy(holding => -holding.efficiency)
-          .take(marketsAmount)
-
-      targetMarketIds = targetMarkets.map(_.asset).toSet
-
       positionsToSell =
-        ourRedundantMarkets ++ maybeOurToChange.filterNot(holding => targetMarketIds.contains(holding.asset))
+        ourRedundantMarkets ++ toSellMarkets
 
-      _                          <- positionsToSell.traverse_(holding => trySell(holding, holding.size))
+      _                          <- updateEffect
+      _                          <- positionsToSell.traverse_(holding => trySell(holding.asset, holding.size))
+
       holdingsAfterUnneededSells <- currentHoldingsF()
       balanceAfterUnneededSells  <- tradingClient.balance()
       overweightLimit = totalBalance(balanceAfterUnneededSells, holdingsAfterUnneededSells) / marketsAmount * 2
+
       _ <- holdingsAfterUnneededSells
-        .filter(holding => targetMarketIds.contains(holding.asset) && holding.totalPrice > overweightLimit)
+        .filter(holding => !positionsToSell.map(_.asset).contains(holding.asset) && holding.totalPrice > overweightLimit)
         .traverse_(holding => sellOverweight(holding, overweightLimit))
 
       holdingsAfterOverweightSells <- currentHoldingsF()
       balanceAfterOverweightSells  <- tradingClient.balance()
       targetMarketPrice = totalBalance(balanceAfterOverweightSells, holdingsAfterOverweightSells) / marketsAmount
-      missingMarkets = targetMarkets
-        .filterNot(target => holdingsAfterOverweightSells.exists(_.asset == target.asset))
-        .sortBy(holding => -holding.efficiency)
-      _ <- missingMarkets.traverse_(target => tryBuy(target.asset, targetMarketPrice - target.totalPrice))
+
+      _ <- toBuyMarkets.sortBy(-_.efficiency).traverse_(target => tryBuy(target.id, targetMarketPrice))
+
       holdingsAfterMissingBuys <- currentHoldingsF()
-      missingMarketIds          = missingMarkets.map(_.asset).toSet
+
       underweightMarkets =
         holdingsAfterMissingBuys
           .filter(holding =>
-            targetMarketIds.contains(holding.asset) &&
-              !missingMarketIds.contains(holding.asset) &&
+            !toBuyMarkets.contains(holding.asset) &&
               holding.totalPrice < targetMarketPrice
           )
           .sortBy(holding => -holding.efficiency)

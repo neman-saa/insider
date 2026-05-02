@@ -75,6 +75,9 @@ object WalletSpec extends SimpleIOSuite {
     override def positions(user: Option[String]): IO[List[Position]] =
       positionsR.get
 
+    override def portfolioValue(user: Option[String]): IO[BigDecimal] =
+      positionsR.get.map(_.map(position => position.size * prices.getOrElse(position.asset, BigDecimal(0))).sum)
+
     override def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): IO[Unit] =
       IO.unit
 
@@ -88,12 +91,17 @@ object WalletSpec extends SimpleIOSuite {
     balance: BigDecimal,
     marketsAmount: Int,
     thresholdPercent: Int = 10,
-    spreadPercent: Int    = 1,
+    buyTimes: Map[String, Instant] = Map.empty,
   ): IO[WalletFixture] =
     for {
       now        <- IO.realTimeInstant
-      repository  = testRepository(infos, now)
-      registry   <- TokensInfoRegistry.withInit[IO](repository, cleanUpPeriod = 1.hour, secondsToSellBeforeResolve = 60)
+      repository  = testRepository(infos, buyTimes, now)
+      registry <- TokensInfoRegistry.withInit[IO](
+        repository,
+        cleanUpPeriod = 1.hour,
+        secondsToSellBeforeResolve = 60,
+        marketsAmount = marketsAmount
+      )
       positionsR <- Ref.of[IO, List[Position]](positions)
       balanceR   <- Ref.of[IO, BigDecimal](balance)
       operationsR <- Ref.of[IO, Vector[Operation]](Vector.empty)
@@ -103,7 +111,7 @@ object WalletSpec extends SimpleIOSuite {
         operationsR,
         infos.view.mapValues(_._1).toMap,
       )
-      wallet <- Wallet.of[IO](registry, tradingClient, marketsAmount, thresholdPercent, spreadPercent)
+      wallet <- Wallet.of[IO](registry, tradingClient, marketsAmount, thresholdPercent)
     } yield WalletFixture(wallet, operationsR, balanceR, positionsR)
 
   private def positionsMap(positions: List[Position]): Map[String, BigDecimal] =
@@ -122,30 +130,42 @@ object WalletSpec extends SimpleIOSuite {
 
   private def testRepository(
     infos: Map[String, (BigDecimal, BigDecimal)],
+    buyTimes: Map[String, Instant],
     now: Instant,
-  ): TokensInfoRepository[IO] =
+  ): TokensInfoRepository[IO] = {
+    def tokenInfos: List[TokenInfo] =
+      infos
+        .toList
+        .map {
+          case (id, (price, efficiency)) =>
+            val secondsToResolve = BigDecimal(100000)
+            val score            = efficiency * secondsToResolve / (1 - price)
+
+            TokenInfo(
+              id               = id,
+              price            = price,
+              score            = score,
+              resolveDate      = now.plusSeconds(secondsToResolve.toLong),
+              lastUpdatedBlock = 0,
+              buyPrice         = none,
+              buyTime          = buyTimes.get(id),
+            )
+        }
+
     new TokensInfoRepository[IO] {
       override def insert(tokens: NonEmptyList[TokenInfo]): IO[Unit] =
         IO.unit
 
       override def select(now: Instant): IO[List[TokenInfo]] =
-        infos
-          .toList
-          .map {
-            case (id, (price, efficiency)) =>
-              val secondsToResolve = BigDecimal(100000)
-              val score            = efficiency * secondsToResolve / (1 - price)
+        tokenInfos.pure[IO]
 
-              TokenInfo(
-                id               = id,
-                price            = price,
-                score            = score,
-                resolveDate      = now.plusSeconds(secondsToResolve.toLong),
-                lastUpdatedBlock = 0,
-              )
-          }
-          .pure[IO]
+      override def getForTokens(tokens: List[String]): IO[Map[String, TokenInfo]] =
+        tokenInfos.filter(info => tokens.contains(info.id)).map(info => info.id -> info).toMap.pure[IO]
+
+      override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): IO[Unit] =
+        IO.unit
     }
+  }
 
   test("sells redundant and replaced positions before buying better top market") {
     val infos = Map(
@@ -158,7 +178,7 @@ object WalletSpec extends SimpleIOSuite {
 
     for {
       fixture        <- walletWith(infos, positions, balance = 0, marketsAmount = 2)
-      _              <- fixture.wallet.updateWallet()
+      _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
       finalBalance   <- fixture.balanceR.get
       finalPositions <- fixture.positionsR.get.map(positions => positionValues(positionsMap(positions), infos))
@@ -173,8 +193,8 @@ object WalletSpec extends SimpleIOSuite {
       expect(finalBalance >= 0) and
       expect(finalBalance < BigDecimal("0.000001")) and
       expect.same(Set("a", "d"), finalPositions.keySet) and
-      inRange(finalPositions("a"), BigDecimal("7.35"), BigDecimal("7.36")) and
-      inRange(finalPositions("d"), BigDecimal("7.25"), BigDecimal("7.26"))
+      inRange(finalPositions("a"), BigDecimal("7.49"), BigDecimal("7.51")) and
+      inRange(finalPositions("d"), BigDecimal("7.49"), BigDecimal("7.51"))
   }
 
   test("keeps current top market when candidate efficiency is inside threshold") {
@@ -187,7 +207,7 @@ object WalletSpec extends SimpleIOSuite {
 
     for {
       fixture        <- walletWith(infos, positions, balance = 42, marketsAmount = 2)
-      _              <- fixture.wallet.updateWallet()
+      _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
       finalBalance   <- fixture.balanceR.get
       finalPositions <- fixture.positionsR.get.map(positions => positionValues(positionsMap(positions), infos))
@@ -196,8 +216,8 @@ object WalletSpec extends SimpleIOSuite {
       expect(finalBalance >= 0) and
       expect(finalBalance < BigDecimal("0.000001")) and
       expect.same(Set("a", "c"), finalPositions.keySet) and
-      inRange(finalPositions("a"), BigDecimal("25.58"), BigDecimal("25.59")) and
-      inRange(finalPositions("c"), BigDecimal("25.58"), BigDecimal("25.59"))
+      inRange(finalPositions("a"), BigDecimal("25.99"), BigDecimal("26.01")) and
+      inRange(finalPositions("c"), BigDecimal("25.99"), BigDecimal("26.01"))
   }
 
   test("sells overweight target position after redundant sells and before missing buys") {
@@ -211,7 +231,7 @@ object WalletSpec extends SimpleIOSuite {
 
     for {
       fixture        <- walletWith(infos, positions, balance = 0, marketsAmount = 3)
-      _              <- fixture.wallet.updateWallet()
+      _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
       finalBalance   <- fixture.balanceR.get
       finalPositions <- fixture.positionsR.get.map(positions => positionValues(positionsMap(positions), infos))
@@ -225,7 +245,43 @@ object WalletSpec extends SimpleIOSuite {
       }) and expect(finalBalance >= 0) and
       expect(finalBalance < BigDecimal("0.000001")) and
       expect.same(Set("a", "d"), finalPositions.keySet) and
-      inRange(finalPositions("a"), BigDecimal("103.26"), BigDecimal("103.27")) and
-      inRange(finalPositions("d"), BigDecimal("49.70"), BigDecimal("49.71"))
+      inRange(finalPositions("a"), BigDecimal("103.32"), BigDecimal("103.34")) and
+      inRange(finalPositions("d"), BigDecimal("51.66"), BigDecimal("51.67"))
+  }
+
+  test("does not sell young positive redundant position") {
+    val infos = Map(
+      "a" -> (BigDecimal("0.5"), BigDecimal(100)),
+      "b" -> (BigDecimal("0.5"), BigDecimal(80)),
+    )
+    val positions = List(Position("a", 10), Position("b", 10))
+    val youngBuyTimes = Map("b" -> Instant.now().minusSeconds(600))
+
+    for {
+      fixture    <- walletWith(infos, positions, balance = 0, marketsAmount = 1, buyTimes = youngBuyTimes)
+      _          <- fixture.wallet.performOperations()
+      operations <- fixture.operationsR.get
+    } yield expect(!operations.exists {
+      case Operation.Sell("b", _, _) => true
+      case _                         => false
+    })
+  }
+
+  test("sells young negative redundant position") {
+    val infos = Map(
+      "a" -> (BigDecimal("0.5"), BigDecimal(100)),
+      "b" -> (BigDecimal("0.5"), BigDecimal(-80)),
+    )
+    val positions = List(Position("a", 10), Position("b", 10))
+    val youngBuyTimes = Map("b" -> Instant.now().minusSeconds(600))
+
+    for {
+      fixture    <- walletWith(infos, positions, balance = 0, marketsAmount = 1, buyTimes = youngBuyTimes)
+      _          <- fixture.wallet.performOperations()
+      operations <- fixture.operationsR.get
+    } yield expect(operations.exists {
+      case Operation.Sell("b", _, _) => true
+      case _                         => false
+    })
   }
 }
