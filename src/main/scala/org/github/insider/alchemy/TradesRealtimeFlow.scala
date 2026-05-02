@@ -34,6 +34,7 @@ class TradesRealtimeFlow[F[_]: Async](
   eventsCached: EventsCached[F],
   tokensInfoRegistry: TokensInfoRegistry[F],
   polygonContracts: PolygonContracts,
+  wallet: Wallet[F]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -79,7 +80,7 @@ class TradesRealtimeFlow[F[_]: Async](
 
         tokensInfoNel = NonEmptyList.fromList(updatedTokensInfo)
         _            <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
-
+        _ <- wallet.performOperations()
         nextLatestBlock = trades.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
@@ -164,6 +165,7 @@ object TradesRealtimeFlow {
     eventsCached: EventsCached[F],
     tokensInfoRegistry: TokensInfoRegistry[F],
     polygonContracts: PolygonContracts,
+    wallet: Wallet[F]
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -179,6 +181,7 @@ object TradesRealtimeFlow {
           eventsCached,
           tokensInfoRegistry,
           polygonContracts,
+          wallet
         )(logger)
       )
 }

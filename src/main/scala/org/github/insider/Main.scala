@@ -104,6 +104,7 @@ object Main extends IOApp.Simple {
           eventsCached,
           tokensInfoRegistry,
           config.polygonContracts,
+          wallet
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
@@ -121,7 +122,7 @@ object Main extends IOApp.Simple {
           _ <- (
             realtimeTrades.runForever,
             realtimeEvents.runForever,
-            wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
+            // wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
           ).parTupled
         } yield ()
     }
