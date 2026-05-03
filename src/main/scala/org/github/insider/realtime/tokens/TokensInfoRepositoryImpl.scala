@@ -4,11 +4,12 @@ import cats.data.NonEmptyList
 import cats.effect.kernel.Async
 import cats.syntax.all._
 import doobie.Transactor
-import doobie.util.update.Update
 import org.typelevel.log4cats.Logger
 import doobie.syntax.all._
 import doobie.postgres.implicits._
+import doobie.util.fragment.Fragment
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import org.github.insider.alchemy.repository.codec._
 
 import java.time.Instant
 
@@ -18,12 +19,13 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
   override def insert(tokens: NonEmptyList[TokenInfo]): F[Unit] = {
 
     val initFragment = fr" INSERT INTO tokens_info (id, price, score, resolve_date, last_updated_block_num) VALUES"
+
     val fragments =
       tokens.map(token =>
         fr"(${token.id}, ${token.price}, ${token.score}, ${token.resolveDate}, ${token.lastUpdatedBlock})"
-      )
+      ).intercalate(fr"")
 
-    val request = initFragment ++ fragments.reduce(_ ++ _)
+    val request = initFragment ++ fragments
     request
       .update
       .run
