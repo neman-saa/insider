@@ -80,7 +80,6 @@ class TradesRealtimeFlow[F[_]: Async](
 
         tokensInfoNel   = NonEmptyList.fromList(updatedTokensInfo)
         _              <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
-        _              <- wallet.performOperations()
         nextLatestBlock = trades.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 
