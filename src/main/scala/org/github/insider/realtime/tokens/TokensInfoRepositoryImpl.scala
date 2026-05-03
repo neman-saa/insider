@@ -8,6 +8,7 @@ import org.typelevel.log4cats.Logger
 import doobie.syntax.all._
 import doobie.postgres.implicits._
 import doobie.util.fragment.Fragment
+import doobie.util.update.Update
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.github.insider.alchemy.repository.codec._
 
@@ -17,18 +18,13 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
     extends TokensInfoRepository[F] {
 
   override def insert(tokens: NonEmptyList[TokenInfo]): F[Unit] = {
-
-    val initFragment = fr" INSERT INTO tokens_info (id, price, score, resolve_date, last_updated_block_num) VALUES"
-
-    val fragments =
-      tokens.map(token =>
-        fr"(${token.id}, ${token.price}, ${token.score}, ${token.resolveDate}, ${token.lastUpdatedBlock})"
-      ).intercalate(fr"")
-
-    val request = initFragment ++ fragments
-    request
-      .update
-      .run
+    Update[TokenInfo](
+      """
+        |INSERT INTO tokens_info (id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time)
+        |VALUES (?, ?, ?, ?, ?, ?, ?)
+        |""".stripMargin
+    )
+      .updateMany(tokens)
       .transact(transactor)
       .flatTap(rows => logger.info(s"Inserted $rows tokens info in 'tokens_info' table"))
       .void
