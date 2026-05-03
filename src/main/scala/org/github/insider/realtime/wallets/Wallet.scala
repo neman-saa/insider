@@ -138,7 +138,7 @@ final class Wallet[F[_]: Async] private (
                     updateEffect
                   )
 
-                case Nil if topTokensIds.length + toBuyMarkets.length - toSellMarkets.length < marketsAmount =>
+                case Nil if ourTopMarkets.length + toBuyMarkets.length - toSellMarkets.length < marketsAmount =>
                   (
                     candidateInfo :: toBuyMarkets,
                     toSellMarkets,
