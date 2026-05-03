@@ -6,6 +6,7 @@ import org.github.insider.realtime.tokens.{TokenInfo, TokenInfoShort, TokensInfo
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
 import org.github.insider.polymarket.domain.Position
+import org.scalactic.anyvals.NonEmptyList
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import java.time.Instant
@@ -76,12 +77,13 @@ final class Wallet[F[_]: Async] private (
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
-        positions <- tradingClient.positions()
+        positions <- tradingClient.positions().map(NonEmptyList.from(_))
         infos <-
-          if (positions.isEmpty) Map.empty[String, TokenInfoShort].pure[F]
-          else tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
-
-      } yield positions.map(position => toHolding(position, infos))
+         positions match {
+           case None => Map.empty[String, TokenInfoShort].pure[F]
+           case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
+         }
+      } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
     }
 
     def totalBalance(currentBalance: BigDecimal, holdings: List[Holding]): BigDecimal =
