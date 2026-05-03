@@ -48,8 +48,8 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               score            = tokenInfo.fold(BigDecimal(0))(_.score) + scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
-              buyPrice = tokenInfo.flatMap(_.buyPrice),
-              buyTime = tokenInfo.flatMap(_.buyTime)
+              buyPrice         = tokenInfo.flatMap(_.buyPrice),
+              buyTime          = tokenInfo.flatMap(_.buyTime)
             )
             val updatedOppositeTokenInfo = TokenInfo(
               id               = metaInfo.oppositeTokenId,
@@ -57,8 +57,8 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               score            = oppositeTokenInfo.fold(BigDecimal(0))(_.score) - scoreFromLeader,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
-              buyPrice = oppositeTokenInfo.flatMap(_.buyPrice),
-              buyTime = oppositeTokenInfo.flatMap(_.buyTime)
+              buyPrice         = oppositeTokenInfo.flatMap(_.buyPrice),
+              buyTime          = oppositeTokenInfo.flatMap(_.buyTime)
             )
 
             val updatedRegistry =
@@ -73,8 +73,8 @@ final class TokensInfoRegistry[F[_]: Sync] private (
   }
 
   def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
-    registryR.update{ map =>
-      val info = map(tokenId)
+    registryR.update { map =>
+      val info    = map(tokenId)
       val newInfo = info.copy(buyPrice = Some(buyPrice), buyTime = Some(buyTime))
       map + (tokenId -> newInfo)
     } >> tokenInfos.setBuyPriceTime(tokenId, buyPrice, buyTime)
@@ -91,8 +91,9 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         }
         .map {
           case (tokenId, tokenInfo) =>
-            val timeToResolve = (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
-            val efficiency    = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
+            val timeToResolve =
+              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
+            val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
             tokenId -> TokenInfoShort(tokenInfo.id, efficiency, tokenInfo.buyTime, tokenInfo.price)
         }
@@ -118,7 +119,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               val timeToResolve =
                 tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve
               val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
-                (if(tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
+                (if (tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
 
               tokenId -> TokenInfoShort(tokenId, efficiency, tokenInfo.buyTime, tokenInfo.price)
           })

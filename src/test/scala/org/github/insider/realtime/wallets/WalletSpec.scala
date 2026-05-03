@@ -90,7 +90,7 @@ object WalletSpec extends SimpleIOSuite {
     positions: List[Position],
     balance: BigDecimal,
     marketsAmount: Int,
-    thresholdPercent: Int = 10,
+    thresholdPercent: Int          = 10,
     buyTimes: Map[String, Instant] = Map.empty,
   ): IO[WalletFixture] =
     for {
@@ -98,12 +98,12 @@ object WalletSpec extends SimpleIOSuite {
       repository <- testRepository(infos, buyTimes, now)
       registry <- TokensInfoRegistry.withInit[IO](
         repository,
-        cleanUpPeriod = 1.hour,
+        cleanUpPeriod              = 1.hour,
         secondsToSellBeforeResolve = 60,
-        marketsAmount = marketsAmount
+        marketsAmount              = marketsAmount
       )
-      positionsR <- Ref.of[IO, List[Position]](positions)
-      balanceR   <- Ref.of[IO, BigDecimal](balance)
+      positionsR  <- Ref.of[IO, List[Position]](positions)
+      balanceR    <- Ref.of[IO, BigDecimal](balance)
       operationsR <- Ref.of[IO, Vector[Operation]](Vector.empty)
       tradingClient = new TestTradingClient(
         positionsR,
@@ -137,38 +137,41 @@ object WalletSpec extends SimpleIOSuite {
     now: Instant,
   ): IO[TokensInfoRepository[IO]] = {
     val tokenInfos =
-      infos.toList.map {
-        case (id, (price, efficiency)) =>
-          val secondsToResolve = BigDecimal(100000)
-          val score            = efficiency * secondsToResolve / (1 - price)
+      infos
+        .toList
+        .map {
+          case (id, (price, efficiency)) =>
+            val secondsToResolve = BigDecimal(100000)
+            val score            = efficiency * secondsToResolve / (1 - price)
 
-          id -> TokenInfo(
-            id               = id,
-            price            = price,
-            score            = score,
-            resolveDate      = now.plusSeconds(secondsToResolve.toLong),
-            lastUpdatedBlock = 0,
-            buyPrice         = none,
-            buyTime          = buyTimes.get(id),
-          )
-      }.toMap
+            id -> TokenInfo(
+              id               = id,
+              price            = price,
+              score            = score,
+              resolveDate      = now.plusSeconds(secondsToResolve.toLong),
+              lastUpdatedBlock = 0,
+              buyPrice         = none,
+              buyTime          = buyTimes.get(id),
+            )
+        }
+        .toMap
 
     Ref.of[IO, Map[String, TokenInfo]](tokenInfos).map { tokenInfosR =>
-    new TokensInfoRepository[IO] {
-      override def insert(tokens: NonEmptyList[TokenInfo]): IO[Unit] =
-        IO.unit
+      new TokensInfoRepository[IO] {
+        override def insert(tokens: NonEmptyList[TokenInfo]): IO[Unit] =
+          IO.unit
 
-      override def select(now: Instant): IO[List[TokenInfo]] =
-        tokenInfosR.get.map(_.values.toList)
+        override def select(now: Instant): IO[List[TokenInfo]] =
+          tokenInfosR.get.map(_.values.toList)
 
-      override def getForTokens(tokens: List[String]): IO[Map[String, TokenInfo]] =
-        tokenInfosR.get.map(_.filter { case (id, _) => tokens.contains(id) })
+        override def getForTokens(tokens: List[String]): IO[Map[String, TokenInfo]] =
+          tokenInfosR.get.map(_.filter { case (id, _) => tokens.contains(id) })
 
-      override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): IO[Unit] =
-        tokenInfosR.update { tokenInfos =>
-          tokenInfos.updated(tokenId, tokenInfos(tokenId).copy(buyPrice = buyPrice.some, buyTime = buyTime.some))
-        }
-    }
+        override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): IO[Unit] =
+          tokenInfosR.update { tokenInfos =>
+            tokenInfos.updated(tokenId, tokenInfos(tokenId).copy(buyPrice = buyPrice.some, buyTime = buyTime.some))
+          }
+      }
     }
   }
 
@@ -185,9 +188,9 @@ object WalletSpec extends SimpleIOSuite {
       fixture <- walletWith(
         infos,
         positions,
-        balance = 0,
+        balance       = 0,
         marketsAmount = 2,
-        buyTimes = oldBuyTimes("a", "b", "c")
+        buyTimes      = oldBuyTimes("a", "b", "c")
       )
       _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
@@ -220,9 +223,9 @@ object WalletSpec extends SimpleIOSuite {
       fixture <- walletWith(
         infos,
         positions,
-        balance = 42,
+        balance       = 42,
         marketsAmount = 2,
-        buyTimes = oldBuyTimes("a", "c")
+        buyTimes      = oldBuyTimes("a", "c")
       )
       _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
@@ -250,9 +253,9 @@ object WalletSpec extends SimpleIOSuite {
       fixture <- walletWith(
         infos,
         positions,
-        balance = 0,
+        balance       = 0,
         marketsAmount = 3,
-        buyTimes = oldBuyTimes("a", "b")
+        buyTimes      = oldBuyTimes("a", "b")
       )
       _              <- fixture.wallet.performOperations()
       operations     <- fixture.operationsR.get
@@ -277,7 +280,7 @@ object WalletSpec extends SimpleIOSuite {
       "a" -> (BigDecimal("0.5"), BigDecimal(100)),
       "b" -> (BigDecimal("0.5"), BigDecimal(80)),
     )
-    val positions = List(Position("a", 10), Position("b", 10))
+    val positions     = List(Position("a", 10), Position("b", 10))
     val youngBuyTimes = Map("b" -> Instant.now().minusSeconds(600))
 
     for {
@@ -295,7 +298,7 @@ object WalletSpec extends SimpleIOSuite {
       "a" -> (BigDecimal("0.5"), BigDecimal(100)),
       "b" -> (BigDecimal("0.5"), BigDecimal(-80)),
     )
-    val positions = List(Position("a", 10), Position("b", 10))
+    val positions     = List(Position("a", 10), Position("b", 10))
     val youngBuyTimes = Map("b" -> Instant.now().minusSeconds(600))
 
     for {

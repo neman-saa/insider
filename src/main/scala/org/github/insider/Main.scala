@@ -122,7 +122,6 @@ object Main extends IOApp.Simple {
           _ <- (
             realtimeTrades.runForever,
             realtimeEvents.runForever,
-            // wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
           ).parTupled
         } yield ()
     }

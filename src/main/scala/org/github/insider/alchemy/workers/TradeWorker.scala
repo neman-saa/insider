@@ -35,16 +35,16 @@ class TradeWorker[F[_]: Async](
     for {
       _ <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - $toBlock")
 
-      standardCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.standardCtf)
-      standardCtfTrades     = transfersProcessor.extractTradesFrom(standardCtfTransfers)
-      negRiskCtfTransfers  <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.negRiskCtf)
-      negRiskCtfTrades      = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+//      standardCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.standardCtf)
+//      standardCtfTrades     = transfersProcessor.extractTradesFrom(standardCtfTransfers)
+      negRiskCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.negRiskCtf)
+      negRiskCtfTrades     = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
 
-      trades = standardCtfTrades ++ negRiskCtfTrades
+      trades = negRiskCtfTrades
 
-      _ <- logger.info(
-        s"[worker-$workerNumber] CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
-      )
+//      _ <- logger.info(
+//        s"[worker-$workerNumber] Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+//      )
       _ <- logger.info(
         s"[worker-$workerNumber] Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
       )
