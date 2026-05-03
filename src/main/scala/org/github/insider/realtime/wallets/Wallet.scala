@@ -37,7 +37,7 @@ final class Wallet[F[_]: Async] private (
     }
 
     def isNew(holding: Holding, time: Instant): Boolean =
-      holding.buyTime.forall(time.getEpochSecond - _.getEpochSecond > 1800)
+      holding.buyTime.forall(time.getEpochSecond - _.getEpochSecond < 1800)
 
     def isBetterMoreThanThreshold(candidateEfficiency: BigDecimal, currentEfficiency: BigDecimal): Boolean =
       candidateEfficiency > currentEfficiency * (BigDecimal(100 + thresholdPercent) / 100)
@@ -98,7 +98,7 @@ final class Wallet[F[_]: Async] private (
         currentHoldings
           .partition(_.efficiency > 0)
 
-      (ourNew, ourOld) = ourPositive.partition(now.getEpochSecond - _.buyTime.getOrElse(now).getEpochSecond < 1800)
+      (ourNew, ourOld) = ourPositive.partition(isNew(_, now))
 
       ourTopMarkets = ourNew ++ ourOld.sortBy(-_.efficiency).take(marketsAmount - ourNew.length)
 
@@ -151,8 +151,7 @@ final class Wallet[F[_]: Async] private (
               }
           }
 
-      positionsToSell =
-        ourRedundantMarkets ++ toSellMarkets
+      positionsToSell = ourRedundantMarkets ++ toSellMarkets
 
       _                          <- updateEffect
       _                          <- positionsToSell.traverse_(holding => trySell(holding.asset, holding.size))
@@ -162,7 +161,11 @@ final class Wallet[F[_]: Async] private (
       overweightLimit = totalBalance(balanceAfterUnneededSells, holdingsAfterUnneededSells) / marketsAmount * 2
 
       _ <- holdingsAfterUnneededSells
-        .filter(holding => !positionsToSell.map(_.asset).contains(holding.asset) && holding.totalPrice > overweightLimit)
+        .filter(holding =>
+          !positionsToSell.map(_.asset).contains(holding.asset) &&
+            (holding.efficiency < 0 || !isNew(holding, now)) &&
+            holding.totalPrice > overweightLimit
+        )
         .traverse_(holding => sellOverweight(holding, overweightLimit))
 
       holdingsAfterOverweightSells <- currentHoldingsF()
