@@ -54,7 +54,7 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .transact(transactor)
 
   override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): F[Unit] =
-    fr"UPDATE tokens_info SET buy_time = $buyTime, buy_price = $buyPrice WHERE id = $tokenId"
+    fr"ALTER TABLE tokens_info UPDATE buy_time = $buyTime, buy_price = $buyPrice WHERE id = $tokenId"
       .update
       .run
       .transact(transactor)
