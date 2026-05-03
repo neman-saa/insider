@@ -46,27 +46,27 @@ class TradesRealtimeFlow[F[_]: Async](
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 100
 
-        standardCtfTransfers <- getAssetsTransfersInRange(
-          fromBlock = latestProcessedBlock + 1,
-          toBlock   = toBlock,
-          contract  = polygonContracts.standardCtf,
-        )
+//        standardCtfTransfers <- getAssetsTransfersInRange(
+//          fromBlock = latestProcessedBlock + 1,
+//          toBlock   = toBlock,
+//          contract  = polygonContracts.standardCtf,
+//        )
         negRiskCtfTransfers <- getAssetsTransfersInRange(
           fromBlock = latestProcessedBlock + 1,
           toBlock   = toBlock,
           contract  = polygonContracts.negRiskCtf,
         )
-        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers)
-        negRiskCtfTrades  = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+//        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers)
+        negRiskCtfTrades = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
 
-        _ <- logger.info(
-          s"CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
-        )
+//        _ <- logger.info(
+//          s"Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+//        )
         _ <- logger.info(
           s"Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
         )
 
-        trades = (standardCtfTrades ++ negRiskCtfTrades)
+        trades = negRiskCtfTrades
           .filter(trade => trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97)
           .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
@@ -80,7 +80,7 @@ class TradesRealtimeFlow[F[_]: Async](
 
         tokensInfoNel   = NonEmptyList.fromList(updatedTokensInfo)
         _              <- tokensInfoNel.fold(Async[F].unit)(tokensInfoRepository.insert)
-        //_              <- wallet.performOperations()
+        _              <- wallet.performOperations()
         nextLatestBlock = trades.map(_.blockNum).maxOption.getOrElse(latestProcessedBlock + 1)
         _              <- latestProcessedBlockR.set(nextLatestBlock)
 

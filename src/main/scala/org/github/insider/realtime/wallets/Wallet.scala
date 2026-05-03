@@ -53,9 +53,7 @@ final class Wallet[F[_]: Async] private (
         tradingClient
           .sell(asset, shares, None)
           .void
-          .handleErrorWith(error =>
-            logger.warn(error)(s"Could not sell $asset shares=$shares, operation skipped")
-          )
+          .handleErrorWith(error => logger.warn(error)(s"Could not sell $asset shares=$shares, operation skipped"))
 
     def tryBuy(asset: String, money: BigDecimal): F[Unit] = {
       tradingClient.balance().flatMap { currentBalance =>
@@ -115,7 +113,9 @@ final class Wallet[F[_]: Async] private (
 
       (toBuyMarkets, toSellMarkets, _, updateEffect) =
         topInfoCandidates
-          .foldLeft((List.empty[TokenInfoShort], List.empty[Holding], maybeOurToChange.sortBy(_.efficiency), ().pure[F])) {
+          .foldLeft(
+            (List.empty[TokenInfoShort], List.empty[Holding], maybeOurToChange.sortBy(_.efficiency), ().pure[F])
+          ) {
 
             case ((toBuyMarkets, toSellMarkets, remainingToChange, updateEffect), (candidateAsset, candidateInfo)) =>
               remainingToChange match {
@@ -153,8 +153,8 @@ final class Wallet[F[_]: Async] private (
 
       positionsToSell = ourRedundantMarkets ++ toSellMarkets
 
-      _                          <- updateEffect
-      _                          <- positionsToSell.traverse_(holding => trySell(holding.asset, holding.size))
+      _ <- updateEffect
+      _ <- positionsToSell.traverse_(holding => trySell(holding.asset, holding.size))
 
       holdingsAfterUnneededSells <- currentHoldingsF()
       balanceAfterUnneededSells  <- tradingClient.balance()
