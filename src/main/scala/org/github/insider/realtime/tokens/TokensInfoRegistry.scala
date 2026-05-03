@@ -1,5 +1,6 @@
 package org.github.insider.realtime.tokens
 
+import cats.data.NonEmptyList
 import cats.effect.implicits.genSpawnOps
 import cats.effect.{Clock, Ref}
 import cats.effect.kernel.{Async, Sync}
@@ -108,7 +109,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     }
   }
 
-  def tokensInfoForTokens(tokens: List[String]): F[Map[TokenId, TokenInfoShort]] = {
+  def tokensInfoForTokens(tokens: NonEmptyList[String]): F[Map[TokenId, TokenInfoShort]] = {
     Clock[F]
       .realTimeInstant
       .flatMap(now =>

@@ -1,12 +1,12 @@
 package org.github.insider.realtime.wallets
 
+import cats.data.NonEmptyList
 import cats.effect.{Async, Clock}
 import org.github.insider.polymarket.client.TradingClient
 import org.github.insider.realtime.tokens.{TokenInfo, TokenInfoShort, TokensInfoRegistry}
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
 import org.github.insider.polymarket.domain.Position
-import org.scalactic.anyvals.NonEmptyList
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import java.time.Instant
@@ -77,7 +77,7 @@ final class Wallet[F[_]: Async] private (
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
-        positions <- tradingClient.positions().map(NonEmptyList.from(_))
+        positions <- tradingClient.positions().map(NonEmptyList.fromList)
         infos <-
          positions match {
            case None => Map.empty[String, TokenInfoShort].pure[F]
