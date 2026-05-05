@@ -11,8 +11,8 @@ import org.github.insider.polymarket.configs.MainConfig.{
   WalletsConfig
 }
 import pureconfig.error.ExceptionThrown
-import pureconfig.{ConfigReader, ConfigSource}
 import pureconfig.generic.semiauto.deriveReader
+import pureconfig.{ConfigReader, ConfigSource}
 
 import java.util.Properties
 import scala.util.Try

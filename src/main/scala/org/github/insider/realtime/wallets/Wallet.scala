@@ -79,10 +79,10 @@ final class Wallet[F[_]: Async] private (
       for {
         positions <- tradingClient.positions().map(NonEmptyList.fromList)
         infos <-
-         positions match {
-           case None => Map.empty[String, TokenInfoShort].pure[F]
-           case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
-         }
+          positions match {
+            case None      => Map.empty[String, TokenInfoShort].pure[F]
+            case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
+          }
       } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
     }
 

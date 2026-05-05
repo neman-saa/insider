@@ -1,7 +1,9 @@
 package org.github.insider
 
+import cats.effect.kernel.Resource
 import cats.effect.{IO, IOApp, Ref}
 import cats.syntax.all._
+import com.comcast.ip4s.IpLiteralSyntax
 import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.TransfersClientImpl
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
@@ -19,7 +21,11 @@ import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
 import org.github.insider.realtime.wallets.Wallet
+import org.http4s.HttpRoutes
 import org.http4s.ember.client.EmberClientBuilder
+import org.http4s.ember.server.EmberServerBuilder
+import org.http4s.metrics.prometheus.{Prometheus, PrometheusExportService}
+import org.http4s.server.{Router, Server}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
 
@@ -31,6 +37,8 @@ object Main extends IOApp.Simple {
       config <- MainConfig.loadR[IO]
 
       transactor <- Database.makeTransactor[IO](config.dbConfig)
+
+      _ <- httpServer
 
       tradesRepository           <- TradesRepositoryImpl.of[IO](transactor).toResource
       aggregatedTradesRepository <- AggregatedTradesRepositoryImpl.of[IO](transactor).toResource
@@ -130,4 +138,25 @@ object Main extends IOApp.Simple {
 
   private def runForeverTgPolling(tgBot: InsiderTelegramBot[IO]): IO[Unit] =
     tgBot.startPolling().handleErrorWith(_ => IO.sleep(10.seconds)).foreverM
+
+  private def httpServer: Resource[IO, Server] = {
+    val meteredRouter: Resource[IO, HttpRoutes[IO]] =
+      for {
+        metricsService <- PrometheusExportService.build[IO]
+        router = Router[IO](
+          "/" -> metricsService.routes
+        )
+      } yield router
+
+    meteredRouter.flatMap { router =>
+      EmberServerBuilder
+        .default[IO]
+        .withHost(ipv4"0.0.0.0")
+        .withPort(port"8080")
+        .withHttpApp(router.orNotFound)
+        .withShutdownTimeout(10.seconds)
+        .withLogger(Slf4jLogger.getLogger[IO])
+        .build
+    }
+  }
 }
