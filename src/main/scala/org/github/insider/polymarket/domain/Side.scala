@@ -5,14 +5,19 @@ import io.circe.{Decoder, Encoder}
 
 sealed trait Side {
   def sign: Int
+  def toString: String
 }
 
 object Side {
   case object Buy extends Side {
     override def sign: Int = 1
+
+    override def toString: String = "Buy"
   }
   case object Sell extends Side {
     override def sign: Int = -1
+
+    override def toString: String = "Sell"
   }
 
   implicit val circeDecoder: Decoder[Side] =

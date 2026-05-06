@@ -16,7 +16,7 @@ import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.EventsCached
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepository}
-import org.github.insider.realtime.wallets.Wallet
+import org.github.insider.realtime.wallets.Trader
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -34,7 +34,7 @@ class TradesRealtimeFlow[F[_]: Async](
   eventsCached: EventsCached[F],
   tokensInfoRegistry: TokensInfoRegistry[F],
   polygonContracts: PolygonContracts,
-  wallet: Wallet[F]
+  wallet: Trader[F]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -164,7 +164,7 @@ object TradesRealtimeFlow {
     eventsCached: EventsCached[F],
     tokensInfoRegistry: TokensInfoRegistry[F],
     polygonContracts: PolygonContracts,
-    wallet: Wallet[F]
+    wallet: Trader[F]
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]

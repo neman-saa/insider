@@ -3,7 +3,7 @@ package org.github.insider.realtime.wallets
 import cats.data.NonEmptyList
 import cats.effect.{Async, Clock}
 import org.github.insider.polymarket.client.TradingClient
-import org.github.insider.realtime.tokens.{TokenInfo, TokenInfoShort, TokensInfoRegistry}
+import org.github.insider.realtime.tokens.{TokenInfoShort, TokensInfoRegistry}
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
 import org.github.insider.polymarket.domain.Position
@@ -12,20 +12,20 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
-final class Wallet[F[_]: Async] private (
+final class TraderFussy[F[_]: Async] private(
   tokensInfoRegistry: TokensInfoRegistry[F],
   logger: Logger[F],
   tradingClient: TradingClient[F],
   marketsAmount: Int,
   thresholdPercent: Int
-) {
+) extends Trader[F]{
 
   def updateEvery(duration: FiniteDuration): F[Unit] =
-    performOperations().handleErrorWith(e => logger.error(e)(s"Failed to update wallet: ${e.getMessage}")) >>
+    performOperations.handleErrorWith(e => logger.error(e)(s"Failed to update wallet: ${e.getMessage}")) >>
       Clock[F].sleep(duration) >>
       updateEvery(duration)
 
-  def performOperations(): F[Unit] = {
+  def performOperations: F[Unit] = {
 
     final case class Holding(
       asset: String,
@@ -45,7 +45,7 @@ final class Wallet[F[_]: Async] private (
 
     def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0))
+        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0, Instant.now))
       Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime)
     }
     def trySell(asset: String, shares: BigDecimal): F[Unit] =
@@ -191,15 +191,15 @@ final class Wallet[F[_]: Async] private (
   }
 }
 
-object Wallet {
+object TraderFussy {
   def of[F[_]: Async](
     registry: TokensInfoRegistry[F],
     tradingClient: TradingClient[F],
     marketsAmount: Int,
     thresholdPercent: Int
-  ): F[Wallet[F]] =
+  ): F[TraderFussy[F]] =
     Slf4jLogger
       .create[F]
-      .map(logger => new Wallet[F](registry, logger, tradingClient, marketsAmount, thresholdPercent))
+      .map(logger => new TraderFussy[F](registry, logger, tradingClient, marketsAmount, thresholdPercent))
 
 }

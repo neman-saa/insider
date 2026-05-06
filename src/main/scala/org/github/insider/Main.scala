@@ -18,7 +18,7 @@ import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
-import org.github.insider.realtime.wallets.Wallet
+import org.github.insider.realtime.wallets.{TraderFussy, TraderLazy}
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
@@ -50,7 +50,8 @@ object Main extends IOApp.Simple {
           tokensInfoRepository,
           cleanUpPeriod = 5.minutes,
           config.wallets.secondsToSellBeforeResolve,
-          config.wallets.marketsAmount
+          config.wallets.marketsAmount,
+          config.wallets.checkLastNBlocks
         )
         .toResource
 
@@ -83,12 +84,13 @@ object Main extends IOApp.Simple {
         tradesRepository
       )
 
-      wallet <- Wallet
+      wallet <- TraderLazy
         .of(
           tokensInfoRegistry,
           tradingClient,
           config.wallets.marketsAmount,
-          config.wallets.sellThresholdPercent
+          config.wallets.secondsToSellBeforeResolve,
+          insiderBot
         )
         .toResource
 

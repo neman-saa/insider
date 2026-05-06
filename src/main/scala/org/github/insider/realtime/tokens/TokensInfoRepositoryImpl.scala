@@ -9,7 +9,6 @@ import doobie.syntax.all._
 import doobie.util.update.Update
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.github.insider.alchemy.repository.codec._
-import doobie.postgres.implicits._
 import doobie._
 import Fragments.in
 

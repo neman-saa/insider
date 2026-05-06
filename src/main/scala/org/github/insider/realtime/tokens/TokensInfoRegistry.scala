@@ -14,6 +14,7 @@ import scala.concurrent.duration.FiniteDuration
 
 final class TokensInfoRegistry[F[_]: Sync] private (
   registryR: Ref[F, Map[TokenId, TokenInfo]],
+  lastNBlocksScores: Ref[F, List[List[(String, BigDecimal)]]],
   secondsToSellBeforeResolve: Int,
   tokenInfos: TokensInfoRepository[F],
   marketsAmount: Int
@@ -27,7 +28,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     trades: List[Trade],
     tokensMetaInfo: Map[TokenId, TokenMetaInfo],
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
-  ): F[List[TokenInfo]] = {
+  ): F[List[TokenInfo]] =
     trades.flatTraverse { trade =>
       registryR.modify { registry =>
         tokensMetaInfo.get(trade.tokenId) match {
@@ -70,8 +71,16 @@ final class TokensInfoRegistry[F[_]: Sync] private (
             (registry, List.empty)
         }
       }
+    } >> {
+      val scoresFromTrades = trades.collect{
+        case trade if leaderboard.contains(HexAddress(trade.makerAddress)) =>
+          val entry = leaderboard(HexAddress(trade.makerAddress))
+          val score = trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
+          trade.tokenId ->score * trade.side.sign
+      }
+      lastNBlocksScores.update(scores => scores.tail :+ scoresFromTrades)
     }
-  }
+
 
   def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
     registryR.update { map =>
@@ -96,14 +105,21 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
             val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
-            tokenId -> TokenInfoShort(tokenInfo.id, efficiency, tokenInfo.buyTime, tokenInfo.price)
+            tokenId -> TokenInfoShort(
+              tokenInfo.id,
+              efficiency,
+              tokenInfo.buyTime,
+              tokenInfo.price,
+              tokenInfo.resolveDate,
+              tokenInfo.score
+            )
         }
         .toList
         .filter {
-          case (_, TokenInfoShort(_, efficiency, _, _)) => efficiency > 0
+          case (_, TokenInfoShort(_, efficiency, _, _, ,_, _)) => efficiency > 0
         }
         .sortBy {
-          case (_, TokenInfoShort(_, efficiency, _, _)) => -efficiency
+          case (_, TokenInfoShort(_, efficiency, _, _, _, _)) => -efficiency
         }
         .take(marketsAmount)
     }
@@ -122,10 +138,22 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
                 (if (tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
 
-              tokenId -> TokenInfoShort(tokenId, efficiency, tokenInfo.buyTime, tokenInfo.price)
+              tokenId -> TokenInfoShort(
+                tokenId,
+                efficiency,
+                tokenInfo.buyTime,
+                tokenInfo.price,
+                tokenInfo.resolveDate,
+                tokenInfo.score
+              )
           })
       )
   }
+
+  def latestScores: F[Map[TokenId, BigDecimal]] = for {
+    latestScores <- lastNBlocksScores.get
+    summedScores = latestScores.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum)
+  } yield summedScores// only scores
 
   private def cleanUpAction: F[Unit] =
     Clock[F].realTimeInstant.flatMap { now =>
@@ -142,17 +170,20 @@ object TokensInfoRegistry {
     tokensInfoRepository: TokensInfoRepository[F],
     cleanUpPeriod: FiniteDuration,
     secondsToSellBeforeResolve: Int,
-    marketsAmount: Int
+    marketsAmount: Int,
+    lastNBlocks: Int
   ): F[TokensInfoRegistry[F]] =
     for {
-      now        <- Clock[F].realTimeInstant
-      tokensInfo <- tokensInfoRepository.select(now)
-      registryR  <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
+      now          <- Clock[F].realTimeInstant
+      tokensInfo   <- tokensInfoRepository.select(now)
+      latestScores <- Ref.of(List.fill(lastNBlocks)(List.empty[(String, BigDecimal)]))
+      registryR    <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
       tokenRegistry = new TokensInfoRegistry[F](
         registryR,
+        latestScores,
         secondsToSellBeforeResolve,
         tokensInfoRepository,
-        marketsAmount
+        marketsAmount,
       )
       _ <- fs2.Stream.repeatEval(tokenRegistry.cleanUpAction).metered(cleanUpPeriod).compile.drain.start
     } yield tokenRegistry

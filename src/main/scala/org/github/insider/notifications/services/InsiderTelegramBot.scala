@@ -10,6 +10,7 @@ import org.github.insider.leaderboard.TradeNotification
 import org.github.insider.polymarket.client.TradingClient
 import org.github.insider.polymarket.domain.Position
 import sttp.client4.Backend
+import org.github.insider.polymarket.domain.Side
 
 class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Backend[F])(
   followTokens: Ref[F, Map[String, Set[String]]], // token id to set of usernames
@@ -26,6 +27,10 @@ class InsiderTelegramBot[F[_]: Async](token: String, chatId: ChatId, backend: Ba
         request(SendMessage(chatId, tradeNotificationToMessage(notification)))
       }
       .handleErrorWith(_ => Async[F].unit)
+
+  def sendTradeInfo(message: String): F[Unit] = {
+    request(SendMessage(chatId, message))
+  }.void.handleErrorWith(_ => Async[F].unit)
 
   override def receiveMessage(message: Message): F[Unit] = {
     if (message.chat.chatId != chatId) Async[F].unit
