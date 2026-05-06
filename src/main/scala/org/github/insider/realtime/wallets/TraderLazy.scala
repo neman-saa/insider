@@ -57,7 +57,7 @@ class TraderLazy[F[_]: Async] private(
          |""".stripMargin
 
     def isCloseToResolve(now: Instant, holding: Holding): Boolean =
-      holding.resolveDate.getEpochSecond - secondsBeforeResolve < now
+      holding.resolveDate.getEpochSecond - secondsBeforeResolve < now.getEpochSecond
 
     def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
       val info = tokenInfos
@@ -171,7 +171,7 @@ class TraderLazy[F[_]: Async] private(
   }
 
   override def updateEvery(duration: FiniteDuration): F[Unit] =
-    performOperations >> Clock[F].sleep(duration) >> updateEvery
+    performOperations >> Clock[F].sleep(duration) >> updateEvery(duration)
 }
 
 object TraderLazy {

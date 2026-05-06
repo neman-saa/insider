@@ -28,7 +28,16 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     trades: List[Trade],
     tokensMetaInfo: Map[TokenId, TokenMetaInfo],
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
-  ): F[List[TokenInfo]] =
+  ): F[List[TokenInfo]] = {
+    val scoresFromTrades = trades.collect {
+      case trade if leaderboard.contains(HexAddress(trade.makerAddress)) =>
+        val entry = leaderboard(HexAddress(trade.makerAddress))
+        val score =
+          trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
+        trade.tokenId -> score * trade.side.sign
+    }
+    lastNBlocksScores.update(scores => scores.tail :+ scoresFromTrades)
+  } >>
     trades.flatTraverse { trade =>
       registryR.modify { registry =>
         tokensMetaInfo.get(trade.tokenId) match {
@@ -71,17 +80,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
             (registry, List.empty)
         }
       }
-    } >> {
-      val scoresFromTrades = trades.collect{
-        case trade if leaderboard.contains(HexAddress(trade.makerAddress)) =>
-          val entry = leaderboard(HexAddress(trade.makerAddress))
-          val score = trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
-          trade.tokenId ->score * trade.side.sign
-      }
-      lastNBlocksScores.update(scores => scores.tail :+ scoresFromTrades)
     }
-
-
   def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
     registryR.update { map =>
       val info    = map(tokenId)
@@ -116,7 +115,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         }
         .toList
         .filter {
-          case (_, TokenInfoShort(_, efficiency, _, _, ,_, _)) => efficiency > 0
+          case (_, TokenInfoShort(_, efficiency, _, _, _, _)) => efficiency > 0
         }
         .sortBy {
           case (_, TokenInfoShort(_, efficiency, _, _, _, _)) => -efficiency
@@ -152,8 +151,8 @@ final class TokensInfoRegistry[F[_]: Sync] private (
 
   def latestScores: F[Map[TokenId, BigDecimal]] = for {
     latestScores <- lastNBlocksScores.get
-    summedScores = latestScores.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum)
-  } yield summedScores// only scores
+    summedScores  = latestScores.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum).toMap
+  } yield summedScores // only scores
 
   private def cleanUpAction: F[Unit] =
     Clock[F].realTimeInstant.flatMap { now =>

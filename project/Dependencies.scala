@@ -30,11 +30,13 @@ object Dependencies {
   }
 
   object Http4s {
-    private val http4sVersion = "0.23.18"
+    private val http4sVersion = "1.0.0-M38"
 
-    val dsl    = "org.http4s" %% "http4s-dsl"          % http4sVersion
-    val client = "org.http4s" %% "http4s-ember-client" % http4sVersion
-    val circe  = "org.http4s" %% "http4s-circe"        % http4sVersion
+    val server  = "org.http4s" %% "http4s-ember-server"       % http4sVersion
+    val dsl     = "org.http4s" %% "http4s-dsl"                % http4sVersion
+    val client  = "org.http4s" %% "http4s-ember-client"       % http4sVersion
+    val circe   = "org.http4s" %% "http4s-circe"              % http4sVersion
+    val metrics = "org.http4s" %% "http4s-prometheus-metrics" % http4sVersion
   }
 
   object Sttp {

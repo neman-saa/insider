@@ -45,7 +45,7 @@ final class TraderFussy[F[_]: Async] private(
 
     def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0, Instant.now))
+        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0, Instant.now, -1))
       Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime)
     }
     def trySell(asset: String, shares: BigDecimal): F[Unit] =
@@ -79,10 +79,10 @@ final class TraderFussy[F[_]: Async] private(
       for {
         positions <- tradingClient.positions().map(NonEmptyList.fromList)
         infos <-
-         positions match {
-           case None => Map.empty[String, TokenInfoShort].pure[F]
-           case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
-         }
+          positions match {
+            case None      => Map.empty[String, TokenInfoShort].pure[F]
+            case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
+          }
       } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
     }
 
