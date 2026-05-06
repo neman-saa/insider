@@ -1,6 +1,5 @@
 package org.github.insider.realtime.tokens
 
-import cats.data.NonEmptyList
 import cats.effect.implicits.genSpawnOps
 import cats.effect.{Clock, Ref}
 import cats.effect.kernel.{Async, Sync}
@@ -88,7 +87,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
       map + (tokenId -> newInfo)
     } >> tokenInfos.setBuyPriceTime(tokenId, buyPrice, buyTime)
 
-  def topTokensInfo: F[List[(TokenId, TokenInfoShort)]] = {
+  def topTokensInfo: F[List[TokenInfoShort]] = {
     for {
       now      <- Clock[F].realTimeInstant
       registry <- registryR.get
@@ -99,12 +98,12 @@ final class TokensInfoRegistry[F[_]: Sync] private (
             tokenInfo.resolveDate.getEpochSecond - secondsToSellBeforeResolve > now.getEpochSecond
         }
         .map {
-          case (tokenId, tokenInfo) =>
+          case (_, tokenInfo) =>
             val timeToResolve =
               (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
             val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
-            tokenId -> TokenInfoShort(
+            TokenInfoShort(
               tokenInfo.id,
               efficiency,
               tokenInfo.buyTime,
@@ -115,16 +114,16 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         }
         .toList
         .filter {
-          case (_, TokenInfoShort(_, efficiency, _, _, _, _)) => efficiency > 0
+          case TokenInfoShort(_, efficiency, _, _, _, _) => efficiency > 0
         }
         .sortBy {
-          case (_, TokenInfoShort(_, efficiency, _, _, _, _)) => -efficiency
+          case TokenInfoShort(_, efficiency, _, _, _, _) => -efficiency
         }
         .take(marketsAmount)
     }
   }
 
-  def tokensInfoForTokens(tokens: NonEmptyList[String]): F[Map[TokenId, TokenInfoShort]] = {
+  def tokensInfoForTokens(tokens: List[String]): F[List[TokenInfoShort]] = {
     Clock[F]
       .realTimeInstant
       .flatMap(now =>
@@ -137,7 +136,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
                 (if (tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
 
-              tokenId -> TokenInfoShort(
+              TokenInfoShort(
                 tokenId,
                 efficiency,
                 tokenInfo.buyTime,

@@ -31,17 +31,22 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .void
   }
 
-  override def getForTokens(tokens: NonEmptyList[String]): F[Map[String, TokenInfo]] = {
-    fr"""
-        |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
-        |FROM tokens_info FINAL
-        |WHERE ${in(fr"id", tokens)}
+  override def getForTokens(tokens: List[String]): F[Map[String, TokenInfo]] = {
+    NonEmptyList.fromList(tokens) match {
+      case None => Map.empty[String, TokenInfo].pure[F]
+      case Some(lst) =>
+        fr"""
+            |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
+            |FROM tokens_info FINAL
+            |WHERE ${in(fr"id", lst)}
       """
-      .stripMargin
-      .query[TokenInfo]
-      .to[List]
-      .transact(transactor)
-      .map { lst => lst.map { info => info.id -> info }.toMap }
+          .stripMargin
+          .query[TokenInfo]
+          .to[List]
+          .transact(transactor)
+          .map { lst => lst.map { info => info.id -> info }.toMap }
+    }
+
   }
 
   override def select(now: Instant): F[List[TokenInfo]] =

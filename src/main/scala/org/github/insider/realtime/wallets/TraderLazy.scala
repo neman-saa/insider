@@ -1,21 +1,19 @@
 package org.github.insider.realtime.wallets
 
-import cats.data.NonEmptyList
 import cats.effect.{Async, Clock}
 import org.github.insider.polymarket.client.TradingClient
-import org.github.insider.polymarket.domain.Position
+import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side}
 import org.github.insider.realtime.tokens.{TokenInfoShort, TokensInfoRegistry}
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
 import org.github.insider.notifications.services.InsiderTelegramBot
-import org.github.insider.polymarket.domain.Side
+import org.github.insider.polymarket.domain
 import org.github.insider.polymarket.domain.Side._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
-class TraderLazy[F[_]: Async] private(
+class TraderLazy[F[_]: Async] private (
   tokensInfoRegistry: TokensInfoRegistry[F],
   logger: Logger[F],
   tradingClient: TradingClient[F],
@@ -34,10 +32,7 @@ class TraderLazy[F[_]: Async] private(
       buyTime: Option[Instant],
       resolveDate: Instant,
       score: BigDecimal
-    ) {
-      def totalPrice: BigDecimal = size * price
-    }
-
+    )
     def createMessage(
       side: Side,
       id: String,
@@ -59,17 +54,17 @@ class TraderLazy[F[_]: Async] private(
     def isCloseToResolve(now: Instant, holding: Holding): Boolean =
       holding.resolveDate.getEpochSecond - secondsBeforeResolve < now.getEpochSecond
 
-    def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
+    def toHolding(position: Position, tokenInfos: List[TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0, Instant.now, 0))
+        .find(_.id == position.asset).getOrElse(TokenInfoShort(position.asset, -1, None, 0, Instant.now, 0))
       Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime, info.resolveDate, info.score)
     }
-    def trySell(holding: Holding, shares: BigDecimal, latestScore: BigDecimal): F[Unit] =
-      if (shares <= 0) Async[F].unit
+    def trySell(holding: Holding, shares: BigDecimal, latestScore: BigDecimal): F[Option[SellOrderResult]] =
+      if (shares <= 0) none[domain.SellOrderResult].pure[F]
       else
         tradingClient
           .sell(holding.asset, shares, None)
-          .flatMap { result =>
+          .flatTap { result =>
             val message =
               createMessage(
                 Buy,
@@ -82,18 +77,24 @@ class TraderLazy[F[_]: Async] private(
               )
             notificator.sendTradeInfo(message)
           }
+          .map(Option.apply)
           .handleErrorWith(error =>
-            logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped")
+            logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped") >> None.pure[F]
           )
 
-    def tryBuy(info: TokenInfoShort, money: BigDecimal, latestScore: BigDecimal): F[Unit] = {
+    def sellAll(holdings: List[Holding], latestScores: Map[String, BigDecimal]): F[BigDecimal] =
+      holdings
+        .traverse(holding => trySell(holding, holding.size, latestScores.getOrElse(holding.asset, BigDecimal(0))))
+        .map(_.flatten.map(_.totalPrice).sum)
+
+    def tryBuy(info: TokenInfoShort, money: BigDecimal, latestScore: BigDecimal): F[Option[BuyOrderResult]] = {
       tradingClient.balance().flatMap { currentBalance =>
         val spend = money min currentBalance
-        if (spend < 1) ().pure[F]
+        if (spend < 1) none[domain.BuyOrderResult].pure[F]
         else
           tradingClient
             .buy(info.id, spend, None)
-            .flatMap { result =>
+            .flatTap { result =>
               val message =
                 createMessage(
                   Buy,
@@ -106,12 +107,21 @@ class TraderLazy[F[_]: Async] private(
                 )
               notificator.sendTradeInfo(message)
             }
+            .map(Option.apply)
             .handleErrorWith(error =>
               logger.warn(error)(s"Could not buy ${info.id} for money=$spend, operation skipped")
+                >> none[domain.BuyOrderResult].pure[F]
             )
 
       }
     }
+
+    def buyAll(infos: List[TokenInfoShort], scores: Map[String, BigDecimal], balance: BigDecimal): F[BigDecimal] =
+      infos
+        .traverse { info =>
+          tryBuy(info, balance, scores.getOrElse(info.id, BigDecimal(0)))
+        }
+        .map(_.flatten.map(_.totalPrice).sum)
 
     def createOrders(holdings: List[Holding]): F[Int] =
       if (holdings.isEmpty) 0.pure[F]
@@ -126,14 +136,32 @@ class TraderLazy[F[_]: Async] private(
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
-        positions <- tradingClient.positions().map(NonEmptyList.fromList)
-        infos <-
-          positions match {
-            case None      => Map.empty[String, TokenInfoShort].pure[F]
-            case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
-          }
-      } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
+        positions <- tradingClient.positions()
+        infos <- tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
+
+      } yield positions.map(toHolding(_, infos))
     }
+
+    def buySellOrderTokens(
+      now: Instant,
+      topInfos: List[TokenInfoShort],
+      holdings: List[Holding],
+      latestScores: Map[String, BigDecimal]
+    ): (List[TokenInfoShort], List[Holding], List[Holding]) = {
+
+      val (ourPositive, ourNegative) =
+        holdings
+          .partition(_.efficiency > 0)
+      val (ourCloseToResolve, ourNew) = ourPositive.partition(isCloseToResolve(now, _))
+      val (ourToSell, _) = ourNew.partition { holding =>
+        val latestScore = latestScores.getOrElse(holding.asset, BigDecimal(0))
+        latestScore < 0 && -latestScore / holding.score > 0.1
+      }
+      val targetMarkets = topInfos.filter(info => !ourPositive.exists(_.asset != info.id))
+
+      (targetMarkets, ourToSell ++ ourNegative, ourCloseToResolve)
+    }
+
 
     for {
       now             <- Clock[F].realTimeInstant
@@ -141,32 +169,17 @@ class TraderLazy[F[_]: Async] private(
       currentHoldings <- currentHoldingsF().map(_.sortBy(holding => -holding.efficiency))
       latestScores    <- tokensInfoRegistry.latestScores
 
-      (ourPositive, ourNegative) =
-        currentHoldings
-          .partition(_.efficiency > 0)
+      (toBuy, toSell, toOrder) = buySellOrderTokens(now, topInfos, currentHoldings, latestScores)
 
-      (ourCloseToResolve, ourNew) = ourPositive.partition(isCloseToResolve(now, _))
-      (ourToSell, ourToStay) = ourNew.partition { holding =>
-        val latestScore = latestScores.getOrElse(holding.asset, BigDecimal(0))
-        latestScore < 0 && -latestScore / holding.score > 0.1
-      }
+      _              <- createOrders(toOrder)
+      _              <- sellAll(toSell, latestScores)
 
-      _ <- ourNegative.traverse_(holding =>
-        trySell(holding, holding.size, latestScores.getOrElse(holding.asset, BigDecimal(0)))
-      )
-      _ <- ourToSell.traverse_(holding =>
-        trySell(holding, holding.size, latestScores.getOrElse(holding.asset, BigDecimal(0)))
-      )
-      _             <- createOrders(ourCloseToResolve)
-      balance       <- tradingClient.balance()
-      portfolioValue = ourPositive.map(_.totalPrice).sum
-      totalBalance   = portfolioValue + balance
-      targetMarkets  = topInfos.filter(info => !ourPositive.exists(_.asset != info._1))
-      _ <- targetMarkets.traverse {
-        case (id, info) =>
-          tryBuy(info, totalBalance / marketsAmount, latestScores.getOrElse(id, BigDecimal(0)))
-      }
-      _ <- targetMarkets.traverse_(info => tokensInfoRegistry.setBuyTimeBuyPrice(info._1, now, info._2.price))
+      portfolioValue <- tradingClient.portfolioValue()
+      balance        <- tradingClient.balance()
+      totalBalance    = balance + portfolioValue
+
+      _ <- buyAll(toBuy, latestScores, totalBalance / marketsAmount)
+      _ <- toBuy.traverse_(info => tokensInfoRegistry.setBuyTimeBuyPrice(info.id, now, info.price))
     } yield ()
   }
 

@@ -12,13 +12,13 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
-final class TraderFussy[F[_]: Async] private(
+final class TraderFussy[F[_]: Async] private (
   tokensInfoRegistry: TokensInfoRegistry[F],
   logger: Logger[F],
   tradingClient: TradingClient[F],
   marketsAmount: Int,
   thresholdPercent: Int
-) extends Trader[F]{
+) extends Trader[F] {
 
   def updateEvery(duration: FiniteDuration): F[Unit] =
     performOperations.handleErrorWith(e => logger.error(e)(s"Failed to update wallet: ${e.getMessage}")) >>
@@ -43,9 +43,10 @@ final class TraderFussy[F[_]: Async] private(
     def isBetterMoreThanThreshold(candidateEfficiency: BigDecimal, currentEfficiency: BigDecimal): Boolean =
       candidateEfficiency > currentEfficiency * (BigDecimal(100 + thresholdPercent) / 100)
 
-    def toHolding(position: Position, tokenInfos: Map[String, TokenInfoShort]): Holding = {
+    def toHolding(position: Position, tokenInfos: List[TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .getOrElse(position.asset, TokenInfoShort(position.asset, -1, None, 0, Instant.now, -1))
+        .find(_.id == position.asset)
+        .getOrElse(TokenInfoShort(position.asset, -1, None, 0, Instant.now, -1))
       Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime)
     }
     def trySell(asset: String, shares: BigDecimal): F[Unit] =
@@ -80,7 +81,7 @@ final class TraderFussy[F[_]: Async] private(
         positions <- tradingClient.positions().map(NonEmptyList.fromList)
         infos <-
           positions match {
-            case None      => Map.empty[String, TokenInfoShort].pure[F]
+            case None      => List.empty[TokenInfoShort].pure[F]
             case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
           }
       } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
@@ -105,13 +106,13 @@ final class TraderFussy[F[_]: Async] private(
       ourRedundantMarkets =
         currentHoldings.filter(holding => !ourTopMarkets.map(_.asset).contains(holding.asset))
 
-      topTokensIds = topInfos.map(_._1)
+      topTokensIds = topInfos.map(_.id)
 
       (_, maybeOurToChange) =
         ourTopMarkets.partition(holding => topTokensIds.contains(holding.asset))
 
       topInfoCandidates =
-        topInfos.filterNot { case (asset, _) => ourTopMarkets.exists(_.asset == asset) }
+        topInfos.filterNot { info => ourTopMarkets.exists(_.asset == info.id) }
 
       (toBuyMarkets, toSellMarkets, _, updateEffect) =
         topInfoCandidates
@@ -119,7 +120,7 @@ final class TraderFussy[F[_]: Async] private(
             (List.empty[TokenInfoShort], List.empty[Holding], maybeOurToChange.sortBy(_.efficiency), ().pure[F])
           ) {
 
-            case ((toBuyMarkets, toSellMarkets, remainingToChange, updateEffect), (candidateAsset, candidateInfo)) =>
+            case ((toBuyMarkets, toSellMarkets, remainingToChange, updateEffect), candidateInfo) =>
               remainingToChange match {
 
                 case worst :: rest
@@ -129,7 +130,7 @@ final class TraderFussy[F[_]: Async] private(
                     candidateInfo :: toBuyMarkets,
                     worst :: toSellMarkets,
                     rest,
-                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateAsset, now, candidateInfo.price)
+                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateInfo.id, now, candidateInfo.price)
                   )
 
                 case worst :: rest if isBetterMoreThanThreshold(candidateInfo.efficiency, worst.efficiency) =>
@@ -145,7 +146,7 @@ final class TraderFussy[F[_]: Async] private(
                     candidateInfo :: toBuyMarkets,
                     toSellMarkets,
                     Nil,
-                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateAsset, now, candidateInfo.price)
+                    updateEffect >> tokensInfoRegistry.setBuyTimeBuyPrice(candidateInfo.id, now, candidateInfo.price)
                   )
 
                 case _ =>
