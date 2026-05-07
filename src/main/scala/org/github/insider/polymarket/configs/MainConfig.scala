@@ -21,6 +21,7 @@ final case class MainConfig(
   dbConfig: DbConfig,
   alchemy: AlchemyConfig,
   polygonContracts: PolygonContracts,
+  oldPolygonContracts: PolygonContracts,
   telegram: TelegramConfig,
   polymarket: PolymarketConfig,
   wallets: WalletsConfig
@@ -28,7 +29,7 @@ final case class MainConfig(
 
 object MainConfig {
   final case class AlchemyConfig(
-    apiKey: String,
+    apiKeys: List[String],
   )
 
   final case class PolygonContracts(

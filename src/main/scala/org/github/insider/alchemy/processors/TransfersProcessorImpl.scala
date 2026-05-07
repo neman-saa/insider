@@ -5,24 +5,29 @@ import org.github.insider.alchemy.domain.AssetTransfer.{ERC1155Transfer, USDCTra
 import org.github.insider.polymarket.domain.Side.{Buy, Sell}
 import org.github.insider.polymarket.domain.Trade
 import cats.syntax.all._
+import org.github.insider.polymarket.CTFType
 import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 
 import scala.annotation.tailrec
 
 private class TransfersProcessorImpl(polygonContracts: PolygonContracts) extends TransfersProcessor {
 
-  override def extractTradesFrom(transfers: List[AssetTransfer]): List[Trade] = {
+  override def extractTradesFrom(transfers: List[AssetTransfer], ctfType: CTFType): List[Trade] = {
     val transfersGroupedByBlockNum = transfers.groupBy(_.blockNum)
 
     val orderedTransfersGroupedByBlockNum =
       transfersGroupedByBlockNum.toList.sortBy { case (blockNum, _) => blockNum }
 
     orderedTransfersGroupedByBlockNum.flatMap {
-      case (blockNum, transfers) => extractTradesForSingleBlock(transfers, blockNum)
+      case (blockNum, transfers) => extractTradesForSingleBlock(transfers, blockNum, ctfType)
     }
   }
 
-  private def extractTradesForSingleBlock(transfers: List[AssetTransfer], blockNum: Long): List[Trade] = {
+  private def extractTradesForSingleBlock(
+    transfers: List[AssetTransfer],
+    blockNum: Long,
+    ctfType: CTFType
+  ): List[Trade] = {
 
     /**
       * @param usdcs
@@ -62,6 +67,7 @@ private class TransfersProcessorImpl(polygonContracts: PolygonContracts) extends
                       txHash         = erc.hash,
                       txIndex        = txIndex,
                       blockTimestamp = erc.blockTimestamp,
+                      ctfType        = ctfType,
                     ) -> ercIndex
                 }
 

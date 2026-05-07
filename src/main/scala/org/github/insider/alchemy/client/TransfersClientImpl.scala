@@ -1,6 +1,7 @@
 package org.github.insider.alchemy.client
 
 import cats.effect.Async
+import cats.effect.implicits.effectResourceOps
 import cats.syntax.all._
 import org.github.insider.alchemy.domain.dto.ApiResponse.GetAssetTransfersApiResponseBody
 import org.github.insider.alchemy.domain.dto.{ApiRequest, ApiResponse, TokenCategory, Transfer}
@@ -16,7 +17,7 @@ import scala.concurrent.duration.DurationInt
 private class TransfersClientImpl[F[_]: Async](
   client: Client[F],
   logger: Logger[F],
-  apiKey: String,
+  apiKeysPool: ApiKeysPool[F],
 ) extends TransfersClient[F] {
 
   override def getAssetTransfers(
@@ -28,32 +29,34 @@ private class TransfersClientImpl[F[_]: Async](
     withMetadata: Option[Boolean],
     page: Option[String]
   ): F[GetAssetTransfersApiResponseBody] = {
-    val uri: Uri =
-      PolygonMainnetHost
-        .addSegment("v2")
-        .addSegment(apiKey)
+    val requestF: F[Request[F]] = apiKeysPool.getApiKey.map { apiKey =>
+      val uri: Uri =
+        PolygonMainnetHost
+          .addSegment("v2")
+          .addSegment(apiKey)
 
-    val requestBody: ApiRequest[ApiRequest.GetAssetTransfersPayload] = ApiRequest.getAssetTransfersRequest(
-      fromBlock    = fromBlock,
-      toBlock      = toBlock,
-      fromAddress  = fromAddress,
-      toAddress    = toAddress,
-      category     = category,
-      withMetadata = withMetadata,
-      page         = page
-    )
+      val requestBody: ApiRequest[ApiRequest.GetAssetTransfersPayload] = ApiRequest.getAssetTransfersRequest(
+        fromBlock    = fromBlock,
+        toBlock      = toBlock,
+        fromAddress  = fromAddress,
+        toAddress    = toAddress,
+        category     = category,
+        withMetadata = withMetadata,
+        page         = page
+      )
 
-    val request: Request[F] = Request[F](
-      method = Method.POST,
-      uri    = uri,
-    ).withEntity(requestBody)
+      Request[F](
+        method = Method.POST,
+        uri    = uri,
+      ).withEntity(requestBody)
+    }
 
-    client.run(request).use {
+    requestF.toResource.flatMap(client.run).use {
       case Status.Successful(response) =>
         response.attemptAs[ApiResponse[GetAssetTransfersApiResponseBody]].value.flatMap {
           case Left(_) =>
             logger
-              .error(s"Unable to parse transfers response. Request params: ${uri.params}")
+              .error(s"Unable to parse transfers response.")
               .as(GetAssetTransfersApiResponseBody(Nil, None))
           case Right(transfersApiResponse) =>
             transfersApiResponse.result.pure[F]
@@ -74,9 +77,9 @@ private class TransfersClientImpl[F[_]: Async](
 }
 
 object TransfersClientImpl {
-  def of[F[_]: Async](client: Client[F], apiKey: String): F[TransfersClient[F]] = {
+  def of[F[_]: Async](client: Client[F], apiKeysPool: ApiKeysPool[F]): F[TransfersClient[F]] = {
     val clientWithLogging = middleware.Logger[F](logBody = false, logHeaders = false)(client)
 
-    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](client, logger, apiKey))
+    Slf4jLogger.create[F].map(logger => new TransfersClientImpl[F](client, logger, apiKeysPool))
   }
 }

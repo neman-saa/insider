@@ -15,8 +15,8 @@ class TradesRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: Logge
   override def insert(trades: NonEmptyList[Trade]): F[Int] =
     Update[Trade](
       """
-      |INSERT INTO trades (maker_address, token_id, side, amount, total_price, block_num, tx_hash, tx_index, block_timestamp)
-      |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      |INSERT INTO trades (maker_address, token_id, side, amount, total_price, block_num, tx_hash, tx_index, block_timestamp, ctf_type)
+      |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       |""".stripMargin
     )
       .updateMany(trades)
