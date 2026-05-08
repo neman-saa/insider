@@ -100,7 +100,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         .map {
           case (_, tokenInfo) =>
             val timeToResolve =
-              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
+              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond).max(1)
             val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
             TokenInfoShort(
@@ -132,9 +132,8 @@ final class TokensInfoRegistry[F[_]: Sync] private (
           .map(_.map {
             case (tokenId, tokenInfo) =>
               val timeToResolve =
-                tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve
-              val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
-                (if (tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
+                tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond
+              val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve.max(1)
 
               TokenInfoShort(
                 tokenId,
@@ -144,7 +143,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
                 tokenInfo.resolveDate,
                 tokenInfo.score
               )
-          })
+          }.toList)
       )
   }
 

@@ -10,6 +10,7 @@ import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.domain
 import org.github.insider.polymarket.domain.Side._
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
@@ -81,7 +82,9 @@ class TraderLazy[F[_]: Async] private (
           }
           .map(Option.apply)
           .handleErrorWith(error =>
-            logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped") >> None.pure[F]
+            logger.warn(error)(s"Could not sell ${holding.asset} shares=$shares, operation skipped") >> none[
+              domain.SellOrderResult
+            ].pure[F]
           )
 
     def sellAll(holdings: List[Holding], latestScores: Map[String, BigDecimal]): F[BigDecimal] =
@@ -126,7 +129,12 @@ class TraderLazy[F[_]: Async] private (
     def buyAll(infos: List[TokenInfoShort], scores: Map[String, BigDecimal], balance: BigDecimal): F[BigDecimal] =
       infos
         .traverse { info =>
-          tryBuy(info, balance, scores.getOrElse(info.id, BigDecimal(0)), info.price + Some(BigDecimal(spreadPercent) / 100))
+          tryBuy(
+            info,
+            balance,
+            scores.getOrElse(info.id, BigDecimal(0)),
+            Some(info.price + BigDecimal(spreadPercent) / 100)
+          )
         }
         .map(_.flatten.map(_.totalPrice).sum)
 
@@ -147,7 +155,7 @@ class TraderLazy[F[_]: Async] private (
 
       val (ourPositive, ourNegative) =
         holdings
-          .partition(_.efficiency > 0)
+          .partition(_.score > 0)
       val ourNew = ourPositive.filterNot(isCloseToResolve(now, _))
       val (ourToSell, _) = ourNew.partition { holding =>
         val latestScore = latestScores.getOrElse(holding.asset, BigDecimal(0))
