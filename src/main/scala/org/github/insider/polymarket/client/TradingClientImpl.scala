@@ -4,7 +4,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Json
 import org.github.insider.polymarket.configs.MainConfig.PolymarketConfig
-import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult, Side, TotalPortfolioValueResult}
+import org.github.insider.polymarket.domain.{BuyOrderResult, Order, Position, SellOrderResult, Side, TotalPortfolioValueResult}
 import org.http4s.Credentials.Token
 import org.http4s.Method.POST
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
@@ -264,6 +264,8 @@ private class TradingClientImpl[F[_]: Async](
         }
     }
   }
+
+  override def ordersList(): F[List[Order]] = ???
 }
 
 object TradingClientImpl {

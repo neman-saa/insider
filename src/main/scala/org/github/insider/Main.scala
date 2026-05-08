@@ -8,17 +8,19 @@ import org.github.insider.alchemy.TradesRealtimeFlow
 import org.github.insider.alchemy.client.{ApiKeysPool, TransfersClientImpl}
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
+import org.github.insider.alchemy.workers.TradeWorkerGroup
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.strategy.RoiNoTradersStrategyCh
 import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
-import org.github.insider.polymarket.client.{EventsClientImpl, TradingClientImpl}
+import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl, TradingClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
+import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
-import org.github.insider.realtime.wallets.Wallet
+import org.github.insider.realtime.wallets.TraderLazy
 import org.http4s.HttpRoutes
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
@@ -38,14 +40,15 @@ object Main extends IOApp.Simple {
 
       _ <- httpServer
 
+      pool                       <- ApiKeysPool.of[IO](config.alchemy.apiKeys).toResource
       tradesRepository           <- TradesRepositoryImpl.of[IO](transactor).toResource
       aggregatedTradesRepository <- AggregatedTradesRepositoryImpl.of[IO](transactor).toResource
 
-      client      <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
-      eventClient <- EventsClientImpl.of[IO](client).toResource
-      alchemyApiKeysPool <- ApiKeysPool.of[IO](config.alchemy.apiKeys).toResource
-      transfersClient    <- TransfersClientImpl.of[IO](client, alchemyApiKeysPool).toResource
-      tradingClient      <- TradingClientImpl.of[IO](client, config.polymarket).toResource
+      client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
+      eventClient     <- EventsClientImpl.of[IO](client).toResource
+      tagsClient      <- TagsClientImpl.of[IO](client).toResource
+      transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
+      tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
@@ -56,7 +59,8 @@ object Main extends IOApp.Simple {
           tokensInfoRepository,
           cleanUpPeriod = 5.minutes,
           config.wallets.secondsToSellBeforeResolve,
-          config.wallets.marketsAmount
+          config.wallets.marketsAmount,
+          config.wallets.checkLastNBlocks
         )
         .toResource
 
@@ -71,18 +75,32 @@ object Main extends IOApp.Simple {
       )
       _ <- runForeverTgPolling(insiderBot).start.toResource
 
+      eventsWorker <- EventsExtractorWorkerGroup
+        .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
+        .toResource
+      tradesWorker <- TradeWorkerGroup
+        .of[IO](
+          transfersClient,
+          transfersProcessor,
+          tradesRepository,
+          aggregatedTradesRepository,
+          config.polygonContracts,
+        )(step = 100, nWorkers = 5)
+        .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
       leaderboards <- Leaderboards.make[IO, AdvancedLeaderboardEntry](
         strategy = RoiNoTradersStrategyCh[IO](transactor),
         tradesRepository
       )
 
-      wallet <- Wallet
+      trader <- TraderLazy
         .of(
           tokensInfoRegistry,
           tradingClient,
           config.wallets.marketsAmount,
-          config.wallets.sellThresholdPercent
+          config.wallets.secondsToSellBeforeResolve,
+          insiderBot,
+          config.wallets.spreadPercent
         )
         .toResource
 
@@ -98,21 +116,25 @@ object Main extends IOApp.Simple {
           eventsCached,
           tokensInfoRegistry,
           config.polygonContracts,
-          wallet
+          trader
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
-    } yield (realtimeTrades, realtimeEvents, wallet)
+    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, trader, config)
 
     resource use {
-      case (realtimeTrades, realtimeEvents, wallet) =>
+      case (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
 
+          // _ <- eventsWorker.extractAllClosedEvents
+          // _ <- tradesWorker.run(86_200_414, 86_208_414)
+
           _ <- (
             realtimeTrades.runForever,
             realtimeEvents.runForever,
+            wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
           ).parTupled
         } yield ()
     }

@@ -23,10 +23,10 @@ object WalletSpec extends SimpleIOSuite {
   }
 
   private final case class WalletFixture(
-    wallet: Wallet[IO],
-    operationsR: Ref[IO, Vector[Operation]],
-    balanceR: Ref[IO, BigDecimal],
-    positionsR: Ref[IO, List[Position]],
+                                          wallet: TraderFussy[IO],
+                                          operationsR: Ref[IO, Vector[Operation]],
+                                          balanceR: Ref[IO, BigDecimal],
+                                          positionsR: Ref[IO, List[Position]],
   )
 
   private final class TestTradingClient(
@@ -111,7 +111,7 @@ object WalletSpec extends SimpleIOSuite {
         operationsR,
         infos.view.mapValues(_._1).toMap,
       )
-      wallet <- Wallet.of[IO](registry, tradingClient, marketsAmount, thresholdPercent)
+      wallet <- TraderFussy.of[IO](registry, tradingClient, marketsAmount, thresholdPercent)
     } yield WalletFixture(wallet, operationsR, balanceR, positionsR)
 
   private def positionsMap(positions: List[Position]): Map[String, BigDecimal] =

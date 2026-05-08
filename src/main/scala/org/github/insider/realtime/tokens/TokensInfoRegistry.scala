@@ -1,6 +1,5 @@
 package org.github.insider.realtime.tokens
 
-import cats.data.NonEmptyList
 import cats.effect.implicits.genSpawnOps
 import cats.effect.{Clock, Ref}
 import cats.effect.kernel.{Async, Sync}
@@ -14,6 +13,7 @@ import scala.concurrent.duration.FiniteDuration
 
 final class TokensInfoRegistry[F[_]: Sync] private (
   registryR: Ref[F, Map[TokenId, TokenInfo]],
+  lastNBlocksScores: Ref[F, List[List[(String, BigDecimal)]]],
   secondsToSellBeforeResolve: Int,
   tokenInfos: TokensInfoRepository[F],
   marketsAmount: Int
@@ -28,6 +28,15 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     tokensMetaInfo: Map[TokenId, TokenMetaInfo],
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
   ): F[List[TokenInfo]] = {
+    val scoresFromTrades = trades.collect {
+      case trade if leaderboard.contains(HexAddress(trade.makerAddress)) =>
+        val entry = leaderboard(HexAddress(trade.makerAddress))
+        val score =
+          trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
+        trade.tokenId -> score * trade.side.sign
+    }
+    lastNBlocksScores.update(scores => scores.tail :+ scoresFromTrades)
+  } >>
     trades.flatTraverse { trade =>
       registryR.modify { registry =>
         tokensMetaInfo.get(trade.tokenId) match {
@@ -71,8 +80,6 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         }
       }
     }
-  }
-
   def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
     registryR.update { map =>
       val info    = map(tokenId)
@@ -80,7 +87,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
       map + (tokenId -> newInfo)
     } >> tokenInfos.setBuyPriceTime(tokenId, buyPrice, buyTime)
 
-  def topTokensInfo: F[List[(TokenId, TokenInfoShort)]] = {
+  def topTokensInfo: F[List[TokenInfoShort]] = {
     for {
       now      <- Clock[F].realTimeInstant
       registry <- registryR.get
@@ -91,25 +98,32 @@ final class TokensInfoRegistry[F[_]: Sync] private (
             tokenInfo.resolveDate.getEpochSecond - secondsToSellBeforeResolve > now.getEpochSecond
         }
         .map {
-          case (tokenId, tokenInfo) =>
+          case (_, tokenInfo) =>
             val timeToResolve =
-              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve).max(1)
+              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond).max(1)
             val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
-            tokenId -> TokenInfoShort(tokenInfo.id, efficiency, tokenInfo.buyTime, tokenInfo.price)
+            TokenInfoShort(
+              tokenInfo.id,
+              efficiency,
+              tokenInfo.buyTime,
+              tokenInfo.price,
+              tokenInfo.resolveDate,
+              tokenInfo.score
+            )
         }
         .toList
         .filter {
-          case (_, TokenInfoShort(_, efficiency, _, _)) => efficiency > 0
+          case TokenInfoShort(_, efficiency, _, _, _, _) => efficiency > 0
         }
         .sortBy {
-          case (_, TokenInfoShort(_, efficiency, _, _)) => -efficiency
+          case TokenInfoShort(_, efficiency, _, _, _, _) => -efficiency
         }
         .take(marketsAmount)
     }
   }
 
-  def tokensInfoForTokens(tokens: NonEmptyList[String]): F[Map[TokenId, TokenInfoShort]] = {
+  def tokensInfoForTokens(tokens: List[String]): F[List[TokenInfoShort]] = {
     Clock[F]
       .realTimeInstant
       .flatMap(now =>
@@ -118,14 +132,25 @@ final class TokensInfoRegistry[F[_]: Sync] private (
           .map(_.map {
             case (tokenId, tokenInfo) =>
               val timeToResolve =
-                tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond - secondsToSellBeforeResolve
-              val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve *
-                (if (tokenInfo.score < 0 && timeToResolve < 0) -1 else 1)
+                tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond
+              val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve.max(1)
 
-              tokenId -> TokenInfoShort(tokenId, efficiency, tokenInfo.buyTime, tokenInfo.price)
-          })
+              TokenInfoShort(
+                tokenId,
+                efficiency,
+                tokenInfo.buyTime,
+                tokenInfo.price,
+                tokenInfo.resolveDate,
+                tokenInfo.score
+              )
+          }.toList)
       )
   }
+
+  def latestScores: F[Map[TokenId, BigDecimal]] = for {
+    latestScores <- lastNBlocksScores.get
+    summedScores  = latestScores.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum).toMap
+  } yield summedScores // only scores
 
   private def cleanUpAction: F[Unit] =
     Clock[F].realTimeInstant.flatMap { now =>
@@ -142,17 +167,20 @@ object TokensInfoRegistry {
     tokensInfoRepository: TokensInfoRepository[F],
     cleanUpPeriod: FiniteDuration,
     secondsToSellBeforeResolve: Int,
-    marketsAmount: Int
+    marketsAmount: Int,
+    lastNBlocks: Int
   ): F[TokensInfoRegistry[F]] =
     for {
-      now        <- Clock[F].realTimeInstant
-      tokensInfo <- tokensInfoRepository.select(now)
-      registryR  <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
+      now          <- Clock[F].realTimeInstant
+      tokensInfo   <- tokensInfoRepository.select(now)
+      latestScores <- Ref.of(List.fill(lastNBlocks)(List.empty[(String, BigDecimal)]))
+      registryR    <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
       tokenRegistry = new TokensInfoRegistry[F](
         registryR,
+        latestScores,
         secondsToSellBeforeResolve,
         tokensInfoRepository,
-        marketsAmount
+        marketsAmount,
       )
       _ <- fs2.Stream.repeatEval(tokenRegistry.cleanUpAction).metered(cleanUpPeriod).compile.drain.start
     } yield tokenRegistry

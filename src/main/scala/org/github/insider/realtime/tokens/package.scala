@@ -19,7 +19,9 @@ package object tokens {
     id: String,
     efficiency: BigDecimal,
     buyTime: Option[Instant],
-    price: BigDecimal
+    price: BigDecimal,
+    resolveDate: Instant,
+    score: BigDecimal
   )
 
   final case class TokenMetaInfo(
