@@ -78,13 +78,9 @@ final class TraderFussy[F[_]: Async] private (
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
-        positions <- tradingClient.positions().map(NonEmptyList.fromList)
-        infos <-
-          positions match {
-            case None      => List.empty[TokenInfoShort].pure[F]
-            case Some(lst) => tokensInfoRegistry.tokensInfoForTokens(lst.map(_.asset))
-          }
-      } yield positions.fold(List.empty[Position])(_.toList).map(position => toHolding(position, infos))
+        positions <- tradingClient.positions()
+        infos     <- tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
+      } yield positions.map(position => toHolding(position, infos))
     }
 
     def totalBalance(currentBalance: BigDecimal, holdings: List[Holding]): BigDecimal =

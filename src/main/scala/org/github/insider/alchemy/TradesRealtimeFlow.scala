@@ -24,17 +24,17 @@ import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
 class TradesRealtimeFlow[F[_]: Async](
-  client: TransfersClient[F],
-  transfersProcessor: TransfersProcessor,
-  tradesRepository: TradesRepository[F],
-  aggregatedRepository: AggregatedTradesRepository[F],
-  tokensInfoRepository: TokensInfoRepository[F],
-  tgBot: InsiderTelegramBot[F],
-  leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
-  eventsCached: EventsCached[F],
-  tokensInfoRegistry: TokensInfoRegistry[F],
-  polygonContracts: PolygonContracts,
-  wallet: Trader[F]
+                                       client: TransfersClient[F],
+                                       transfersProcessor: TransfersProcessor,
+                                       tradesRepository: TradesRepository[F],
+                                       aggregatedRepository: AggregatedTradesRepository[F],
+                                       tokensInfoRepository: TokensInfoRepository[F],
+                                       tgBot: InsiderTelegramBot[F],
+                                       leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
+                                       eventsCached: EventsCached[F],
+                                       tokensInfoRegistry: TokensInfoRegistry[F],
+                                       polygonContracts: PolygonContracts,
+                                       trader: Trader[F]
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -67,12 +67,14 @@ class TradesRealtimeFlow[F[_]: Async](
         )
 
         trades = negRiskCtfTrades
-          .filter(trade => trade.singleTokenPrice > 0.03 && trade.singleTokenPrice < 0.97)
+          .filter(trade => trade.singleTokenPrice > 0.07 && trade.singleTokenPrice < 0.93)
           .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
         leaderboard       <- leaderboards.getLeaderboard
         tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
         updatedTokensInfo <- tokensInfoRegistry.updateWith(trades, tokensMetaInfo, leaderboard)
+
+        _ <- trader.performOperations
 
         tradesNel = NonEmptyList.fromList(trades)
         _        <- tradesNel.fold(0.pure[F])(tradesRepository.insert)

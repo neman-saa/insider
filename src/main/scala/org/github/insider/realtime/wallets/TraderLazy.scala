@@ -19,7 +19,8 @@ class TraderLazy[F[_]: Async] private (
   tradingClient: TradingClient[F],
   secondsBeforeResolve: Int,
   marketsAmount: Int,
-  notificator: InsiderTelegramBot[F]
+  notificator: InsiderTelegramBot[F],
+  spreadPercent: Int
 ) extends Trader[F] {
 
   override def performOperations: F[Unit] = {
@@ -56,7 +57,8 @@ class TraderLazy[F[_]: Async] private (
 
     def toHolding(position: Position, tokenInfos: List[TokenInfoShort]): Holding = {
       val info = tokenInfos
-        .find(_.id == position.asset).getOrElse(TokenInfoShort(position.asset, -1, None, 0, Instant.now, 0))
+        .find(_.id == position.asset)
+        .getOrElse(TokenInfoShort(position.asset, -1, None, 0, Instant.now, 0))
       Holding(position.asset, position.size, info.price, info.efficiency, info.buyTime, info.resolveDate, info.score)
     }
     def trySell(holding: Holding, shares: BigDecimal, latestScore: BigDecimal): F[Option[SellOrderResult]] =
@@ -87,13 +89,18 @@ class TraderLazy[F[_]: Async] private (
         .traverse(holding => trySell(holding, holding.size, latestScores.getOrElse(holding.asset, BigDecimal(0))))
         .map(_.flatten.map(_.totalPrice).sum)
 
-    def tryBuy(info: TokenInfoShort, money: BigDecimal, latestScore: BigDecimal): F[Option[BuyOrderResult]] = {
+    def tryBuy(
+      info: TokenInfoShort,
+      money: BigDecimal,
+      latestScore: BigDecimal,
+      maxPrice: Option[BigDecimal]
+    ): F[Option[BuyOrderResult]] = {
       tradingClient.balance().flatMap { currentBalance =>
         val spend = money min currentBalance
         if (spend < 1) none[domain.BuyOrderResult].pure[F]
         else
           tradingClient
-            .buy(info.id, spend, None)
+            .buy(info.id, spend, maxPrice)
             .flatTap { result =>
               val message =
                 createMessage(
@@ -119,25 +126,14 @@ class TraderLazy[F[_]: Async] private (
     def buyAll(infos: List[TokenInfoShort], scores: Map[String, BigDecimal], balance: BigDecimal): F[BigDecimal] =
       infos
         .traverse { info =>
-          tryBuy(info, balance, scores.getOrElse(info.id, BigDecimal(0)))
+          tryBuy(info, balance, scores.getOrElse(info.id, BigDecimal(0)), info.price + Some(BigDecimal(spreadPercent) / 100))
         }
         .map(_.flatten.map(_.totalPrice).sum)
-
-    def createOrders(holdings: List[Holding]): F[Int] =
-      if (holdings.isEmpty) 0.pure[F]
-      else
-        for {
-          currentOrders <- tradingClient.ordersList()
-          holdingsToOrder = holdings.filter(holding =>
-            !currentOrders.filter(_.side == Side.Buy).map(_.tokenId).contains(holding.asset)
-          )
-          _ <- holdingsToOrder.traverse_(holding => tradingClient.sellOrder(holding.asset, holding.size, 0.99))
-        } yield (currentOrders ++ holdingsToOrder).length
 
     def currentHoldingsF(): F[List[Holding]] = {
       for {
         positions <- tradingClient.positions()
-        infos <- tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
+        infos     <- tokensInfoRegistry.tokensInfoForTokens(positions.map(_.asset))
 
       } yield positions.map(toHolding(_, infos))
     }
@@ -147,21 +143,21 @@ class TraderLazy[F[_]: Async] private (
       topInfos: List[TokenInfoShort],
       holdings: List[Holding],
       latestScores: Map[String, BigDecimal]
-    ): (List[TokenInfoShort], List[Holding], List[Holding]) = {
+    ): (List[TokenInfoShort], List[Holding]) = {
 
       val (ourPositive, ourNegative) =
         holdings
           .partition(_.efficiency > 0)
-      val (ourCloseToResolve, ourNew) = ourPositive.partition(isCloseToResolve(now, _))
+      val ourNew = ourPositive.filterNot(isCloseToResolve(now, _))
       val (ourToSell, _) = ourNew.partition { holding =>
         val latestScore = latestScores.getOrElse(holding.asset, BigDecimal(0))
-        latestScore < 0 && -latestScore / holding.score > 0.1
+        latestScore < 0
       }
-      val targetMarkets = topInfos.filter(info => !ourPositive.exists(_.asset != info.id))
+      val targetMarkets =
+        topInfos.filter(info => !ourNew.exists(_.asset != info.id)).take(marketsAmount - ourNew.length)
 
-      (targetMarkets, ourToSell ++ ourNegative, ourCloseToResolve)
+      (targetMarkets, ourToSell ++ ourNegative)
     }
-
 
     for {
       now             <- Clock[F].realTimeInstant
@@ -169,10 +165,9 @@ class TraderLazy[F[_]: Async] private (
       currentHoldings <- currentHoldingsF().map(_.sortBy(holding => -holding.efficiency))
       latestScores    <- tokensInfoRegistry.latestScores
 
-      (toBuy, toSell, toOrder) = buySellOrderTokens(now, topInfos, currentHoldings, latestScores)
+      (toBuy, toSell) = buySellOrderTokens(now, topInfos, currentHoldings, latestScores)
 
-      _              <- createOrders(toOrder)
-      _              <- sellAll(toSell, latestScores)
+      _ <- sellAll(toSell, latestScores)
 
       portfolioValue <- tradingClient.portfolioValue()
       balance        <- tradingClient.balance()
@@ -193,12 +188,21 @@ object TraderLazy {
     tradingClient: TradingClient[F],
     marketsAmount: Int,
     secondsBeforeResolve: Int,
-    notificator: InsiderTelegramBot[F]
+    notificator: InsiderTelegramBot[F],
+    spreadPercent: Int
   ): F[TraderLazy[F]] =
     Slf4jLogger
       .create[F]
       .map(logger =>
-        new TraderLazy[F](registry, logger, tradingClient, secondsBeforeResolve, marketsAmount, notificator)
+        new TraderLazy[F](
+          registry,
+          logger,
+          tradingClient,
+          secondsBeforeResolve,
+          marketsAmount,
+          notificator,
+          spreadPercent
+        )
       )
 
 }

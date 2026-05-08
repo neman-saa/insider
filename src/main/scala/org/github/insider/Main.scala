@@ -24,7 +24,7 @@ import org.github.insider.realtime.wallets.TraderLazy
 import org.http4s.HttpRoutes
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.metrics.prometheus.{Prometheus, PrometheusExportService}
+import org.http4s.metrics.prometheus.PrometheusExportService
 import org.http4s.server.{Router, Server}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import sttp.client4.httpclient.cats.HttpClientCatsBackend
@@ -92,13 +92,14 @@ object Main extends IOApp.Simple {
         tradesRepository
       )
 
-      wallet <- TraderLazy
+      trader <- TraderLazy
         .of(
           tokensInfoRegistry,
           tradingClient,
           config.wallets.marketsAmount,
           config.wallets.secondsToSellBeforeResolve,
-          insiderBot
+          insiderBot,
+          config.wallets.spreadPercent
         )
         .toResource
 
@@ -114,11 +115,11 @@ object Main extends IOApp.Simple {
           eventsCached,
           tokensInfoRegistry,
           config.polygonContracts,
-          wallet
+          trader
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
-    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config)
+    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, trader, config)
 
     resource use {
       case (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config) =>
