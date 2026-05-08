@@ -5,7 +5,7 @@ import cats.effect.{IO, IOApp, Ref}
 import cats.syntax.all._
 import com.comcast.ip4s.IpLiteralSyntax
 import org.github.insider.alchemy.TradesRealtimeFlow
-import org.github.insider.alchemy.client.TransfersClientImpl
+import org.github.insider.alchemy.client.{ApiKeysPool, TransfersClientImpl}
 import org.github.insider.alchemy.processors.TransfersProcessorImpl
 import org.github.insider.alchemy.repository.{AggregatedTradesRepositoryImpl, TradesRepositoryImpl}
 import org.github.insider.alchemy.workers.TradeWorkerGroup
@@ -40,13 +40,14 @@ object Main extends IOApp.Simple {
 
       _ <- httpServer
 
+      pool                       <- ApiKeysPool.of[IO](config.alchemy.apiKeys).toResource
       tradesRepository           <- TradesRepositoryImpl.of[IO](transactor).toResource
       aggregatedTradesRepository <- AggregatedTradesRepositoryImpl.of[IO](transactor).toResource
 
       client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
       eventClient     <- EventsClientImpl.of[IO](client).toResource
       tagsClient      <- TagsClientImpl.of[IO](client).toResource
-      transfersClient <- TransfersClientImpl.of[IO](client, config.alchemy.apiKey).toResource
+      transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
       tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource

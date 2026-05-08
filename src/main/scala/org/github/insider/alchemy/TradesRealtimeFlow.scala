@@ -14,6 +14,7 @@ import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 import org.github.insider.notifications.services.InsiderTelegramBot
+import org.github.insider.polymarket.CTFType
 import org.github.insider.polymarket.EventsCached
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepository}
 import org.github.insider.realtime.wallets.Trader
@@ -56,8 +57,8 @@ class TradesRealtimeFlow[F[_]: Async](
           toBlock   = toBlock,
           contract  = polygonContracts.negRiskCtf,
         )
-//        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers)
-        negRiskCtfTrades = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+//        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers, CTFType.StandardCTF)
+        negRiskCtfTrades = transfersProcessor.extractTradesFrom(negRiskCtfTransfers, CTFType.NegRiskCTF)
 
 //        _ <- logger.info(
 //          s"Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"

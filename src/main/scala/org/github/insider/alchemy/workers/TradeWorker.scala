@@ -11,6 +11,7 @@ import org.github.insider.alchemy.domain.AssetTransfer
 import org.github.insider.alchemy.domain.dto.TokenCategory.{ERC1155, ERC20}
 import org.github.insider.alchemy.processors.TransfersProcessor
 import org.github.insider.alchemy.repository.{AggregatedTradesRepository, TradesRepository}
+import org.github.insider.polymarket.CTFType
 import org.github.insider.polymarket.configs.MainConfig.PolygonContracts
 
 class TradeWorker[F[_]: Async](
@@ -35,16 +36,16 @@ class TradeWorker[F[_]: Async](
     for {
       _ <- logger.info(s"[worker-$workerNumber] Starting range $fromBlock - $toBlock")
 
-//      standardCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.standardCtf)
-//      standardCtfTrades     = transfersProcessor.extractTradesFrom(standardCtfTransfers)
-      negRiskCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.negRiskCtf)
-      negRiskCtfTrades     = transfersProcessor.extractTradesFrom(negRiskCtfTransfers)
+      standardCtfTransfers <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.standardCtf)
+      standardCtfTrades     = transfersProcessor.extractTradesFrom(standardCtfTransfers, CTFType.StandardCTF)
+      negRiskCtfTransfers  <- getAssetsTransfersInRange(fromBlock, toBlock, polygonContracts.negRiskCtf)
+      negRiskCtfTrades      = transfersProcessor.extractTradesFrom(negRiskCtfTransfers, CTFType.NegRiskCTF)
 
-      trades = negRiskCtfTrades
+      trades = standardCtfTrades ++ negRiskCtfTrades
 
-//      _ <- logger.info(
-//        s"[worker-$workerNumber] Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
-//      )
+      _ <- logger.info(
+        s"[worker-$workerNumber] Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+      )
       _ <- logger.info(
         s"[worker-$workerNumber] Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
       )
