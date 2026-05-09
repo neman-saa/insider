@@ -4,7 +4,16 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.circe.Json
 import org.github.insider.polymarket.configs.MainConfig.PolymarketConfig
-import org.github.insider.polymarket.domain.{BuyOrderResult, Order, Position, SellOrderResult, Side, TotalPortfolioValueResult}
+import org.github.insider.polymarket.domain.{
+  BuyOrder,
+  BuyOrderResult,
+  Order,
+  Position,
+  SellOrder,
+  SellOrderResult,
+  Side,
+  TotalPortfolioValueResult
+}
 import org.http4s.Credentials.Token
 import org.http4s.Method.POST
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
@@ -265,7 +274,37 @@ private class TradingClientImpl[F[_]: Async](
     }
   }
 
-  override def ordersList(): F[List[Order]] = ???
+  override def ordersList(tokenId: String): F[List[Order]] = {
+    val uri: Uri =
+      DataApiHost
+        .addSegment("book")
+        .withQueryParam("token_id", tokenId)
+
+    client.get[List[Order]](uri) {
+      case Status.Successful(response) =>
+        response.as[Json].map { json =>
+          val bids = json
+            .findAllByKey("bids")
+            .headOption
+            .flatMap(_.as[List[BuyOrder]].toOption)
+            .getOrElse(List.empty)
+
+          val asks = json
+            .findAllByKey("asks")
+            .headOption
+            .flatMap(_.as[List[SellOrder]].toOption)
+            .getOrElse(List.empty)
+
+          bids ++ asks
+        }
+      case other =>
+        other.as[Json].flatMap { json =>
+          val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
+          logger.error(s"Unsuccessful response received while fetching total portfolio value: $error") >>
+            Async[F].raiseError(new Throwable(error))
+        }
+    }
+  }
 }
 
 object TradingClientImpl {
