@@ -52,9 +52,12 @@ final class TokensInfoRegistry[F[_]: Sync] private (
       }
 
     recentScoreChangesR.update { allChanges =>
-      val toDrop = Math.min(0, allChanges.length + batchScoreChanges.length - recentScoreChangesBlocksLength)
+      val resizedBatchScoreChanges =
+        batchScoreChanges.drop(Math.max(batchScoreChanges.length - recentScoreChangesBlocksLength, 0))
+      val toDrop =
+        Math.min(0, allChanges.length + resizedBatchScoreChanges.length - recentScoreChangesBlocksLength)
 
-      allChanges.drop(toDrop).appendedAll(batchScoreChanges)
+      allChanges.drop(toDrop).appendedAll(resizedBatchScoreChanges)
     }
   }
 
