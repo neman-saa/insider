@@ -108,13 +108,15 @@ object Main extends IOApp.Simple {
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
-    } yield (realtimeTrades, realtimeEvents)
+    } yield (realtimeTrades, realtimeEvents, config)
 
     resource use {
-      case (realtimeTrades, realtimeEvents) =>
+      case (realtimeTrades, realtimeEvents, config) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
+
+          _ <- logger.info(s"Trader config: ${config.trader}")
 
           _ <- (
             realtimeTrades.runForever,

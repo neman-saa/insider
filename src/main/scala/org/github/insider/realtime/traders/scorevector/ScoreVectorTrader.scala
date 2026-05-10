@@ -12,6 +12,8 @@ import org.github.insider.realtime.tokens.{EffectiveTokenInfo, TokenId, TokenInf
 import org.github.insider.realtime.traders.scorevector.OperationAuditLog.{BuyAuditLog, SellAuditLog}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import scala.util.Try
+
 class ScoreVectorTrader[F[_]: Async](
   tradingClient: TradingClient[F],
   tokensInfoRegistry: TokensInfoRegistry[F],
@@ -35,6 +37,9 @@ class ScoreVectorTrader[F[_]: Async](
 
           balance        <- tradingClient.balance()
           portfolioValue <- tradingClient.portfolioValue()
+
+          _ <- logger.info(s"Balance: $balance")
+          _ <- logger.info(s"Portfolio value: $portfolioValue")
 
           buyCandidates <- getBuyCandidates(balance, portfolioValue, recentScoreChanges)
           buyAuditLogs  <- buyCandidates.traverse(performBuy)
@@ -75,16 +80,16 @@ class ScoreVectorTrader[F[_]: Async](
         tokensInfoRegistry.getTokenInfo(position.asset).flatMap {
           case Some(tokenInfo: TokenInfo) =>
             val shortScoreChangePercent: Option[BigDecimal] =
-              recentScoreChanges.get(position.asset).map { recentScoreChange =>
-                tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1
+              recentScoreChanges.get(position.asset).flatMap { recentScoreChange =>
+                Try(tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1).toOption
               }
-            val longScoreChangePercent: BigDecimal =
-              tokenInfo.score / tokenInfo.maxScore - 1
+            val longScoreChangePercent: Option[BigDecimal] =
+              Try(tokenInfo.score / tokenInfo.maxScore - 1).toOption
 
             val shortExceeded =
               shortScoreChangePercent.exists(_ <= -(traderConfig.shortScoreDrawdownPercentThreshold / 100))
             val longExceeded =
-              longScoreChangePercent <= -(traderConfig.longScoreDrawdownPercentThreshold / 100)
+              longScoreChangePercent.exists(_ <= -(traderConfig.longScoreDrawdownPercentThreshold / 100))
 
             if (shortExceeded) {
               logger.info(s"Significant short score change for token ${position.asset}: $shortScoreChangePercent") >>
@@ -133,17 +138,26 @@ class ScoreVectorTrader[F[_]: Async](
     portfolioValue: BigDecimal,
     recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[List[BuyCandidate]] = {
-    val maxUsdForSingleMarket = (balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
-
-    val maxUsdMarketsCount = (balance quot maxUsdForSingleMarket).toInt
-    val reminder           = balance % maxUsdForSingleMarket
-
-    // distribution of available balance to new markets
-    val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
-    val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
+    val maxUsdForSingleMarket =
+      Try((balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100))
+//
+//    val maxUsdMarketsCount = (balance quot maxUsdForSingleMarket).toInt
+//    val reminder           = balance % maxUsdForSingleMarket
+//
+//    // distribution of available balance to new markets
+//    val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
+//    val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
 
     for {
+      _                  <- logger.info(s"maxUsdForSingleMarket: $maxUsdForSingleMarket")
+      _                  <- logger.info(s"portfolioValue: $portfolioValue")
+      _                  <- logger.info(s"balance: $balance")
+      maxUsdMarketsCount  = (balance quot maxUsdForSingleMarket.getOrElse(1)).toInt
+      _                  <- logger.info(s"maxUsdMarketsCount: $maxUsdMarketsCount")
+      reminder            = balance % maxUsdForSingleMarket.getOrElse(1)
+      _                  <- logger.info(s"reminder: $maxUsdMarketsCount")
       topTokens          <- tokensInfoRegistry.topTokensInfo
+      clampedQuoteAmounts = Nil
       buyCandidateTokens <- topTokens.traverseFilter(token => isBuyCandidate(token, recentScoreChanges))
     } yield clampedQuoteAmounts.zip(buyCandidateTokens).map {
       case (quote, buyCandidateToken) => BuyCandidate(buyCandidateToken.id, quote)
