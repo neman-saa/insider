@@ -8,15 +8,13 @@ import org.github.insider.leaderboard.HexAddress
 import org.github.insider.leaderboard.LeaderboardEntry.AdvancedLeaderboardEntry
 import org.github.insider.polymarket.domain.Trade
 
-import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
 final class TokensInfoRegistry[F[_]: Sync] private (
   registryR: Ref[F, Map[TokenId, TokenInfo]],
-  lastNBlocksScores: Ref[F, List[List[(String, BigDecimal)]]],
+  recentScoreChangesR: Ref[F, List[Map[TokenId, BigDecimal]]],
   secondsToSellBeforeResolve: Int,
-  tokenInfos: TokensInfoRepository[F],
-  marketsAmount: Int
+  recentHistoryLengthBlocks: Int,
 ) {
 
   /**
@@ -28,15 +26,41 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     tokensMetaInfo: Map[TokenId, TokenMetaInfo],
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
   ): F[List[TokenInfo]] = {
-    val scoresFromTrades = trades.collect {
-      case trade if leaderboard.contains(HexAddress(trade.makerAddress)) =>
-        val entry = leaderboard(HexAddress(trade.makerAddress))
-        val score =
-          trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
-        trade.tokenId -> score * trade.side.sign
+    for {
+      _             <- updateRecentScoreChanges(trades, leaderboard)
+      updatedTokens <- updateRegistry(trades, tokensMetaInfo, leaderboard)
+    } yield updatedTokens
+  }
+
+  private def updateRecentScoreChanges(
+    trades: List[Trade],
+    leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
+  ): F[Unit] = {
+    val batchScoreChanges: List[Map[TokenId, BigDecimal]] =
+      trades.groupBy(_.blockNum).toList.sortBy { case (blockNum, _) => blockNum }.map {
+        case (_, blockTrades) =>
+          blockTrades.flatMap { trade =>
+            leaderboard.get(HexAddress(trade.makerAddress)).map { entry =>
+              val score =
+                trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
+
+              trade.tokenId -> score * trade.side.sign
+            }
+          }.toMap
+      }
+
+    recentScoreChangesR.update { allChanges =>
+      val toDrop = Math.min(0, allChanges.length + batchScoreChanges.length - recentHistoryLengthBlocks)
+
+      allChanges.drop(toDrop).appendedAll(batchScoreChanges)
     }
-    lastNBlocksScores.update(scores => scores.tail :+ scoresFromTrades)
-  } >>
+  }
+
+  private def updateRegistry(
+    trades: List[Trade],
+    tokensMetaInfo: Map[TokenId, TokenMetaInfo],
+    leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
+  ): F[List[TokenInfo]] =
     trades.flatTraverse { trade =>
       registryR.modify { registry =>
         tokensMetaInfo.get(trade.tokenId) match {
@@ -49,26 +73,40 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               case None => BigDecimal(0)
             }
 
-            val tokenInfo         = registry.get(trade.tokenId)
-            val oppositeTokenInfo = registry.get(metaInfo.oppositeTokenId)
+            val tokenInfo = registry.get(trade.tokenId)
+
+            val updatedTokenScore = tokenInfo.fold(BigDecimal(0))(_.score) + scoreFromLeader
+            val updatedMaxTokenScore =
+              tokenInfo
+                .map(_.maxScore)
+                .map(maxScore => maxScore max updatedTokenScore)
+                .getOrElse(updatedTokenScore)
 
             val updatedTokenInfo = TokenInfo(
               id               = trade.tokenId,
               price            = trade.singleTokenPrice,
-              score            = tokenInfo.fold(BigDecimal(0))(_.score) + scoreFromLeader,
+              score            = updatedTokenScore,
+              maxScore         = updatedMaxTokenScore,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
-              buyPrice         = tokenInfo.flatMap(_.buyPrice),
-              buyTime          = tokenInfo.flatMap(_.buyTime)
             )
+
+            val oppositeTokenInfo = registry.get(metaInfo.oppositeTokenId)
+
+            val updatedOppositeTokenScore = oppositeTokenInfo.fold(BigDecimal(0))(_.score) - scoreFromLeader
+            val updatedMaxOppositeTokenScore =
+              oppositeTokenInfo
+                .map(_.maxScore)
+                .map(maxScore => maxScore max updatedOppositeTokenScore)
+                .getOrElse(updatedOppositeTokenScore)
+
             val updatedOppositeTokenInfo = TokenInfo(
               id               = metaInfo.oppositeTokenId,
               price            = 1 - trade.singleTokenPrice,
-              score            = oppositeTokenInfo.fold(BigDecimal(0))(_.score) - scoreFromLeader,
+              score            = updatedOppositeTokenScore,
+              maxScore         = updatedMaxOppositeTokenScore,
               resolveDate      = metaInfo.resolveDate,
               lastUpdatedBlock = trade.blockNum,
-              buyPrice         = oppositeTokenInfo.flatMap(_.buyPrice),
-              buyTime          = oppositeTokenInfo.flatMap(_.buyTime)
             )
 
             val updatedRegistry =
@@ -80,14 +118,11 @@ final class TokensInfoRegistry[F[_]: Sync] private (
         }
       }
     }
-  def setBuyTimeBuyPrice(tokenId: TokenId, buyTime: Instant, buyPrice: BigDecimal): F[Unit] =
-    registryR.update { map =>
-      val info    = map(tokenId)
-      val newInfo = info.copy(buyPrice = Some(buyPrice), buyTime = Some(buyTime))
-      map + (tokenId -> newInfo)
-    } >> tokenInfos.setBuyPriceTime(tokenId, buyPrice, buyTime)
 
-  def topTokensInfo: F[List[TokenInfoShort]] = {
+  def getTokenInfo(tokenId: TokenId): F[Option[TokenInfo]] =
+    registryR.get.map(registry => registry.get(tokenId))
+
+  def topTokensInfo: F[List[EffectiveTokenInfo]] = {
     for {
       now      <- Clock[F].realTimeInstant
       registry <- registryR.get
@@ -103,54 +138,27 @@ final class TokensInfoRegistry[F[_]: Sync] private (
               (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond).max(1)
             val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
 
-            TokenInfoShort(
-              tokenInfo.id,
-              efficiency,
-              tokenInfo.buyTime,
-              tokenInfo.price,
-              tokenInfo.resolveDate,
-              tokenInfo.score
+            EffectiveTokenInfo(
+              id          = tokenInfo.id,
+              efficiency  = efficiency,
+              price       = tokenInfo.price,
+              score       = tokenInfo.score,
+              maxScore    = tokenInfo.maxScore,
+              resolveDate = tokenInfo.resolveDate,
             )
         }
         .toList
-        .filter {
-          case TokenInfoShort(_, efficiency, _, _, _, _) => efficiency > 0
-        }
-        .sortBy {
-          case TokenInfoShort(_, efficiency, _, _, _, _) => -efficiency
-        }
-        .take(marketsAmount)
+        .filter(tokenInfo => tokenInfo.efficiency > 0)
+        .sortBy(tokenInfo => -tokenInfo.efficiency)
     }
   }
 
-  def tokensInfoForTokens(tokens: List[String]): F[List[TokenInfoShort]] = {
-    Clock[F]
-      .realTimeInstant
-      .flatMap(now =>
-        tokenInfos
-          .getForTokens(tokens)
-          .map(_.map {
-            case (tokenId, tokenInfo) =>
-              val timeToResolve =
-                tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond
-              val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve.max(1)
-
-              TokenInfoShort(
-                tokenId,
-                efficiency,
-                tokenInfo.buyTime,
-                tokenInfo.price,
-                tokenInfo.resolveDate,
-                tokenInfo.score
-              )
-          }.toList)
-      )
+  def recentScoreChanges: F[Map[TokenId, BigDecimal]] = {
+    for {
+      recentScoreChanges      <- recentScoreChangesR.get
+      summedRecentScoreChanges = recentScoreChanges.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum).toMap
+    } yield summedRecentScoreChanges
   }
-
-  def latestScores: F[Map[TokenId, BigDecimal]] = for {
-    latestScores <- lastNBlocksScores.get
-    summedScores  = latestScores.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum).toMap
-  } yield summedScores // only scores
 
   private def cleanUpAction: F[Unit] =
     Clock[F].realTimeInstant.flatMap { now =>
@@ -167,20 +175,18 @@ object TokensInfoRegistry {
     tokensInfoRepository: TokensInfoRepository[F],
     cleanUpPeriod: FiniteDuration,
     secondsToSellBeforeResolve: Int,
-    marketsAmount: Int,
-    lastNBlocks: Int
+    recentHistoryLengthBlocks: Int
   ): F[TokensInfoRegistry[F]] =
     for {
-      now          <- Clock[F].realTimeInstant
-      tokensInfo   <- tokensInfoRepository.select(now)
-      latestScores <- Ref.of(List.fill(lastNBlocks)(List.empty[(String, BigDecimal)]))
-      registryR    <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
+      now                 <- Clock[F].realTimeInstant
+      tokensInfo          <- tokensInfoRepository.select(now)
+      recentScoreChangesR <- Ref.of[F, List[Map[TokenId, BigDecimal]]](List.empty)
+      registryR           <- Ref.of(tokensInfo.map(info => info.id -> info).toMap)
       tokenRegistry = new TokensInfoRegistry[F](
         registryR,
-        latestScores,
+        recentScoreChangesR,
         secondsToSellBeforeResolve,
-        tokensInfoRepository,
-        marketsAmount,
+        recentHistoryLengthBlocks,
       )
       _ <- fs2.Stream.repeatEval(tokenRegistry.cleanUpAction).metered(cleanUpPeriod).compile.drain.start
     } yield tokenRegistry

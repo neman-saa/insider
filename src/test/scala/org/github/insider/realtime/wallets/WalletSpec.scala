@@ -23,10 +23,10 @@ object WalletSpec extends SimpleIOSuite {
   }
 
   private final case class WalletFixture(
-                                          wallet: TraderFussy[IO],
-                                          operationsR: Ref[IO, Vector[Operation]],
-                                          balanceR: Ref[IO, BigDecimal],
-                                          positionsR: Ref[IO, List[Position]],
+    wallet: TraderFussy[IO],
+    operationsR: Ref[IO, Vector[Operation]],
+    balanceR: Ref[IO, BigDecimal],
+    positionsR: Ref[IO, List[Position]],
   )
 
   private final class TestTradingClient(

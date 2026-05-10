@@ -17,7 +17,7 @@ import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.polymarket.CTFType
 import org.github.insider.polymarket.EventsCached
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepository}
-import org.github.insider.realtime.wallets.Trader
+import org.github.insider.realtime.traders.scorevector.ScoreVectorTrader
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -25,17 +25,18 @@ import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
 class TradesRealtimeFlow[F[_]: Async](
-                                       client: TransfersClient[F],
-                                       transfersProcessor: TransfersProcessor,
-                                       tradesRepository: TradesRepository[F],
-                                       aggregatedRepository: AggregatedTradesRepository[F],
-                                       tokensInfoRepository: TokensInfoRepository[F],
-                                       tgBot: InsiderTelegramBot[F],
-                                       leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
-                                       eventsCached: EventsCached[F],
-                                       tokensInfoRegistry: TokensInfoRegistry[F],
-                                       polygonContracts: PolygonContracts,
-                                       trader: Trader[F]
+  client: TransfersClient[F],
+  transfersProcessor: TransfersProcessor,
+  tradesRepository: TradesRepository[F],
+  aggregatedRepository: AggregatedTradesRepository[F],
+  tokensInfoRepository: TokensInfoRepository[F],
+  tgBot: InsiderTelegramBot[F],
+  leaderboards: Leaderboards[F, AdvancedLeaderboardEntry],
+  eventsCached: EventsCached[F],
+  tokensInfoRegistry: TokensInfoRegistry[F],
+  polygonContracts: PolygonContracts,
+  trader: ScoreVectorTrader[F],
+  traderEnabled: Boolean,
 )(logger: Logger[F]) {
 
   def runForever: F[Unit] = {
@@ -75,7 +76,7 @@ class TradesRealtimeFlow[F[_]: Async](
         tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
         updatedTokensInfo <- tokensInfoRegistry.updateWith(trades, tokensMetaInfo, leaderboard)
 
-        _ <- trader.performOperations
+        _ <- Applicative[F].whenA(traderEnabled)(trader.trade)
 
         tradesNel = NonEmptyList.fromList(trades)
         _        <- tradesNel.fold(0.pure[F])(tradesRepository.insert)
@@ -167,7 +168,8 @@ object TradesRealtimeFlow {
     eventsCached: EventsCached[F],
     tokensInfoRegistry: TokensInfoRegistry[F],
     polygonContracts: PolygonContracts,
-    wallet: Trader[F]
+    trader: ScoreVectorTrader[F],
+    traderEnabled: Boolean,
   ): F[TradesRealtimeFlow[F]] =
     Slf4jLogger
       .create[F]
@@ -183,7 +185,8 @@ object TradesRealtimeFlow {
           eventsCached,
           tokensInfoRegistry,
           polygonContracts,
-          wallet
+          trader,
+          traderEnabled,
         )(logger)
       )
 }

@@ -9,19 +9,18 @@ package object tokens {
     id: TokenId,
     price: BigDecimal,
     score: BigDecimal,
+    maxScore: BigDecimal,
     resolveDate: Instant,
     lastUpdatedBlock: Long,
-    buyPrice: Option[BigDecimal],
-    buyTime: Option[Instant]
   )
 
-  final case class TokenInfoShort(
+  final case class EffectiveTokenInfo(
     id: String,
     efficiency: BigDecimal,
-    buyTime: Option[Instant],
     price: BigDecimal,
+    score: BigDecimal,
+    maxScore: BigDecimal,
     resolveDate: Instant,
-    score: BigDecimal
   )
 
   final case class TokenMetaInfo(

@@ -21,8 +21,8 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
   override def insert(tokens: NonEmptyList[TokenInfo]): F[Unit] = {
     Update[TokenInfo](
       """
-        |INSERT INTO tokens_info (id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time)
-        |VALUES (?, ?, ?, ?, ?, ?, ?)
+        |INSERT INTO tokens_info (id, price, score, max_score, resolve_date, last_updated_block_num)
+        |VALUES (?, ?, ?, ?, ?, ?)
         |""".stripMargin
     )
       .updateMany(tokens)
@@ -31,27 +31,9 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .void
   }
 
-  override def getForTokens(tokens: List[String]): F[Map[String, TokenInfo]] = {
-    NonEmptyList.fromList(tokens) match {
-      case None => Map.empty[String, TokenInfo].pure[F]
-      case Some(lst) =>
-        fr"""
-            |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
-            |FROM tokens_info FINAL
-            |WHERE ${in(fr"id", lst)}
-      """
-          .stripMargin
-          .query[TokenInfo]
-          .to[List]
-          .transact(transactor)
-          .map { lst => lst.map { info => info.id -> info }.toMap }
-    }
-
-  }
-
   override def select(now: Instant): F[List[TokenInfo]] =
     fr"""
-        |SELECT id, price, score, resolve_date, last_updated_block_num, buy_price, buy_time
+        |SELECT id, price, score, max_score, resolve_date, last_updated_block_num
         |FROM tokens_info FINAL
         |WHERE resolve_date > $now
       """
@@ -59,13 +41,6 @@ class TokensInfoRepositoryImpl[F[_]: Async](transactor: Transactor[F], logger: L
       .query[TokenInfo]
       .to[List]
       .transact(transactor)
-
-  override def setBuyPriceTime(tokenId: String, buyPrice: BigDecimal, buyTime: Instant): F[Unit] =
-    fr"ALTER TABLE tokens_info UPDATE buy_time = $buyTime, buy_price = $buyPrice WHERE id = $tokenId"
-      .update
-      .run
-      .transact(transactor)
-      .void
 }
 
 object TokensInfoRepositoryImpl {

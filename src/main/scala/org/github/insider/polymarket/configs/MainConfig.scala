@@ -10,6 +10,7 @@ import org.github.insider.polymarket.configs.MainConfig.{
   TelegramConfig,
   WalletsConfig
 }
+import org.github.insider.realtime.traders.TraderConfig
 import pureconfig.error.ExceptionThrown
 import pureconfig.generic.semiauto.deriveReader
 import pureconfig.{ConfigReader, ConfigSource}
@@ -24,7 +25,8 @@ final case class MainConfig(
   oldPolygonContracts: PolygonContracts,
   telegram: TelegramConfig,
   polymarket: PolymarketConfig,
-  wallets: WalletsConfig
+  wallets: WalletsConfig,
+  trader: TraderConfig,
 )
 
 object MainConfig {
@@ -87,6 +89,7 @@ object MainConfig {
 
   implicit val polymarketConfigReader: ConfigReader[PolymarketConfig] = deriveReader
   implicit val walletsConfigReader: ConfigReader[WalletsConfig]       = deriveReader
+  implicit val traderConfigReader: ConfigReader[TraderConfig]         = deriveReader
 
   def loadR[F[_]: Sync]: Resource[F, MainConfig] =
     Resource.eval(Sync[F].delay(ConfigSource.default.loadOrThrow[MainConfig]))

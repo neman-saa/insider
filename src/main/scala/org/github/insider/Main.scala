@@ -20,7 +20,7 @@ import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
 import org.github.insider.realtime.tokens.{TokensInfoRegistry, TokensInfoRepositoryImpl}
-import org.github.insider.realtime.wallets.TraderLazy
+import org.github.insider.realtime.traders.scorevector.{OperationsAuditRepository, OperationsAuditor, ScoreVectorTrader}
 import org.http4s.HttpRoutes
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
@@ -46,7 +46,6 @@ object Main extends IOApp.Simple {
 
       client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
       eventClient     <- EventsClientImpl.of[IO](client).toResource
-      tagsClient      <- TagsClientImpl.of[IO](client).toResource
       transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
       tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
 
@@ -59,8 +58,7 @@ object Main extends IOApp.Simple {
           tokensInfoRepository,
           cleanUpPeriod = 5.minutes,
           config.wallets.secondsToSellBeforeResolve,
-          config.wallets.marketsAmount,
-          config.wallets.checkLastNBlocks
+          config.wallets.checkLastNBlocks,
         )
         .toResource
 
@@ -75,32 +73,21 @@ object Main extends IOApp.Simple {
       )
       _ <- runForeverTgPolling(insiderBot).start.toResource
 
-      eventsWorker <- EventsExtractorWorkerGroup
-        .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
-        .toResource
-      tradesWorker <- TradeWorkerGroup
-        .of[IO](
-          transfersClient,
-          transfersProcessor,
-          tradesRepository,
-          aggregatedTradesRepository,
-          config.polygonContracts,
-        )(step = 100, nWorkers = 5)
-        .toResource
       eventsCached <- EventsCached.of[IO](eventClient)
       leaderboards <- Leaderboards.make[IO, AdvancedLeaderboardEntry](
         strategy = RoiNoTradersStrategyCh[IO](transactor),
         tradesRepository
       )
 
-      trader <- TraderLazy
+      operationsAuditRepository <- OperationsAuditRepository.OperationsAuditRepositoryImpl.of[IO](transactor).toResource
+      opAuditor                 <- OperationsAuditor.of[IO](operationsAuditRepository).toResource
+
+      trader <- ScoreVectorTrader
         .of(
-          tokensInfoRegistry,
           tradingClient,
-          config.wallets.marketsAmount,
-          config.wallets.secondsToSellBeforeResolve,
-          insiderBot,
-          config.wallets.spreadPercent
+          tokensInfoRegistry,
+          opAuditor,
+          config.trader,
         )
         .toResource
 
@@ -116,25 +103,22 @@ object Main extends IOApp.Simple {
           eventsCached,
           tokensInfoRegistry,
           config.polygonContracts,
-          trader
+          trader,
+          config.trader.enabled,
         )
         .toResource
       realtimeEvents <- EventsRealtimeFlow.of[IO](eventClient, eventsImpl, marketsImpl).toResource
-    } yield (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, trader, config)
+    } yield (realtimeTrades, realtimeEvents)
 
     resource use {
-      case (realtimeTrades, realtimeEvents, eventsWorker, tradesWorker, wallet, config) =>
+      case (realtimeTrades, realtimeEvents) =>
         for {
           logger <- Slf4jLogger.create[IO]
           _      <- logger.info("Application started after successful resource acquisition...")
 
-          // _ <- eventsWorker.extractAllClosedEvents
-          // _ <- tradesWorker.run(86_200_414, 86_208_414)
-
           _ <- (
             realtimeTrades.runForever,
             realtimeEvents.runForever,
-            wallet.updateEvery(config.wallets.updateEveryMinutes.minutes)
           ).parTupled
         } yield ()
     }
