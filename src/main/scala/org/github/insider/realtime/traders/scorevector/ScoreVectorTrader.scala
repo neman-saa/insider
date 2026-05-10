@@ -36,7 +36,7 @@ class ScoreVectorTrader[F[_]: Async](
           balance        <- tradingClient.balance()
           portfolioValue <- tradingClient.portfolioValue()
 
-          buyCandidates <- getBuyCandidates(balance, portfolioValue)
+          buyCandidates <- getBuyCandidates(balance, portfolioValue, recentScoreChanges)
           buyAuditLogs  <- buyCandidates.traverse(performBuy)
           _             <- buyAuditLogs.flatten.traverse(opAuditor.audit)
         } yield ()
@@ -57,11 +57,12 @@ class ScoreVectorTrader[F[_]: Async](
   }
 
   /*
-   * Two sell triggers:
+   * Three sell triggers:
    * - market score decreased on longScoreDrawdownPercentThreshold percent from buy score within long period of time.
    *   It means market slowly loosing its potential
    * - market score decreased on shortScoreDrawdownPercentThreshold percent from buy score within short period of time.
    *   It means markets actively loosing its potential
+   * - early exit for profitable token to free money
    *
    * Returns Some(position) if @param position is sell candidate, otherwise returns None
    * */
@@ -94,6 +95,9 @@ class ScoreVectorTrader[F[_]: Async](
                 position.some.pure[F]
             } else if (longExceeded) {
               logger.info(s"Significant long score change for token ${position.asset}: $longScoreChangePercent") >>
+                position.some.pure[F]
+            } else if (tokenInfo.price >= BigDecimal(0.98) && buyLog.price < BigDecimal(0.98)) {
+              logger.info(s"Early exit for profitable token ${position.asset}") >>
                 position.some.pure[F]
             } else none[Position].pure[F]
 
@@ -131,6 +135,7 @@ class ScoreVectorTrader[F[_]: Async](
   private def getBuyCandidates(
     balance: BigDecimal,
     portfolioValue: BigDecimal,
+    recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[List[BuyCandidate]] = {
     val maxUsdForSingleMarket = (balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
 
@@ -143,23 +148,33 @@ class ScoreVectorTrader[F[_]: Async](
 
     for {
       topTokens          <- tokensInfoRegistry.topTokensInfo
-      buyCandidateTokens <- topTokens.traverseFilter(isBuyCandidate)
-      buyCandidates = clampedQuoteAmounts.zip(buyCandidateTokens).map {
-        case (quote, buyCandidateToken) => BuyCandidate(buyCandidateToken.id, quote)
-      }
-      _ <- logger.info(s"Buy candidates: $buyCandidates")
-    } yield buyCandidates
+      buyCandidateTokens <- topTokens.traverseFilter(token => isBuyCandidate(token, recentScoreChanges))
+    } yield clampedQuoteAmounts.zip(buyCandidateTokens).map {
+      case (quote, buyCandidateToken) => BuyCandidate(buyCandidateToken.id, quote)
+    }
   }
 
   private def isBuyCandidate(
     tokenInfo: EffectiveTokenInfo,
+    recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[Option[EffectiveTokenInfo]] =
     opAuditor.lastAuditLogFor(tokenInfo.id).flatMap {
       // consider to buy more if recent score shows positive vector
-      case Some(buyLog: BuyAuditLog) => none[EffectiveTokenInfo].pure[F]
+      case Some(buyLog: BuyAuditLog) =>
+        none[EffectiveTokenInfo].pure[F]
+
       // consider to re-buy if recent score shows positive vector
-      case Some(sellLog: SellAuditLog) => none[EffectiveTokenInfo].pure[F]
-      case None                        => tokenInfo.some.pure[F]
+      case Some(sellLog: SellAuditLog) =>
+        none[EffectiveTokenInfo].pure[F]
+
+      case None =>
+        val hasPositiveScoreVector: Boolean =
+          recentScoreChanges.get(tokenInfo.id).forall(recentScoreChange => recentScoreChange > 0)
+
+        if (hasPositiveScoreVector)
+          tokenInfo.some.pure[F]
+        else
+          none[EffectiveTokenInfo].pure[F]
     }
 
   private def performBuy(buyCandidate: BuyCandidate): F[Option[BuyAuditLog]] = {

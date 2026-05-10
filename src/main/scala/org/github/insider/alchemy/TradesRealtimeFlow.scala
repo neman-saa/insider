@@ -69,7 +69,7 @@ class TradesRealtimeFlow[F[_]: Async](
         )
 
         trades = negRiskCtfTrades
-          .filter(trade => trade.singleTokenPrice > 0.07 && trade.singleTokenPrice < 0.93)
+          .filter(trade => trade.singleTokenPrice >= 0.01 && trade.singleTokenPrice <= 0.99)
           .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
         leaderboard       <- leaderboards.getLeaderboard
