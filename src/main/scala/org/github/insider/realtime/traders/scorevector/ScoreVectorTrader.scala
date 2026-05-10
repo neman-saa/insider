@@ -75,20 +75,16 @@ class ScoreVectorTrader[F[_]: Async](
         tokensInfoRegistry.getTokenInfo(position.asset).flatMap {
           case Some(tokenInfo: TokenInfo) =>
             val shortScoreChangePercent: Option[BigDecimal] =
-              for {
-                recentScoreChange <- recentScoreChanges.get(position.asset)
-                momentScore       <- buyLog.momentScore
-              } yield recentScoreChange / momentScore - 1
-
-            val longScoreChangePercent: Option[BigDecimal] =
-              buyLog.momentScore.map { momentScore =>
-                tokenInfo.score / momentScore - 1
+              recentScoreChanges.get(position.asset).map { recentScoreChange =>
+                tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1
               }
+            val longScoreChangePercent: BigDecimal =
+              tokenInfo.score / tokenInfo.maxScore - 1
 
             val shortExceeded =
               shortScoreChangePercent.exists(_ <= -(traderConfig.shortScoreDrawdownPercentThreshold / 100))
             val longExceeded =
-              longScoreChangePercent.exists(_ <= -(traderConfig.longScoreDrawdownPercentThreshold / 100))
+              longScoreChangePercent <= -(traderConfig.longScoreDrawdownPercentThreshold / 100)
 
             if (shortExceeded) {
               logger.info(s"Significant short score change for token ${position.asset}: $shortScoreChangePercent") >>

@@ -39,14 +39,16 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     val batchScoreChanges: List[Map[TokenId, BigDecimal]] =
       trades.groupBy(_.blockNum).toList.sortBy { case (blockNum, _) => blockNum }.map {
         case (_, blockTrades) =>
-          blockTrades.flatMap { trade =>
-            leaderboard.get(HexAddress(trade.makerAddress)).map { entry =>
-              val score =
-                trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
+          blockTrades
+            .flatMap { trade =>
+              leaderboard.get(HexAddress(trade.makerAddress)).map { entry =>
+                val score =
+                  trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
 
-              trade.tokenId -> score * trade.side.sign
+                trade.tokenId -> score * trade.side.sign
+              }
             }
-          }.toMap
+            .groupMapReduce { case (tokenId, _) => tokenId } { case (_, score) => score }(_ + _)
       }
 
     recentScoreChangesR.update { allChanges =>
