@@ -38,9 +38,6 @@ class ScoreVectorTrader[F[_]: Async](
           balance        <- tradingClient.balance()
           portfolioValue <- tradingClient.portfolioValue()
 
-          _ <- logger.info(s"Balance: $balance")
-          _ <- logger.info(s"Portfolio value: $portfolioValue")
-
           buyCandidates <- getBuyCandidates(balance, portfolioValue, recentScoreChanges)
           buyAuditLogs  <- buyCandidates.traverse(performBuy)
           _             <- buyAuditLogs.flatten.traverse(opAuditor.audit)
@@ -138,26 +135,17 @@ class ScoreVectorTrader[F[_]: Async](
     portfolioValue: BigDecimal,
     recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[List[BuyCandidate]] = {
-    val maxUsdForSingleMarket =
-      Try((balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100))
-//
-//    val maxUsdMarketsCount = (balance quot maxUsdForSingleMarket).toInt
-//    val reminder           = balance % maxUsdForSingleMarket
-//
-//    // distribution of available balance to new markets
-//    val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
-//    val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
+    val maxUsdForSingleMarket = (balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
+
+    val maxUsdMarketsCount = (balance quot maxUsdForSingleMarket).toInt
+    val reminder           = balance % maxUsdForSingleMarket
+
+    // distribution of available balance to new markets
+    val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
+    val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
 
     for {
-      _                  <- logger.info(s"maxUsdForSingleMarket: $maxUsdForSingleMarket")
-      _                  <- logger.info(s"portfolioValue: $portfolioValue")
-      _                  <- logger.info(s"balance: $balance")
-      maxUsdMarketsCount  = (balance quot maxUsdForSingleMarket.getOrElse(1)).toInt
-      _                  <- logger.info(s"maxUsdMarketsCount: $maxUsdMarketsCount")
-      reminder            = balance % maxUsdForSingleMarket.getOrElse(1)
-      _                  <- logger.info(s"reminder: $maxUsdMarketsCount")
       topTokens          <- tokensInfoRegistry.topTokensInfo
-      clampedQuoteAmounts = Nil
       buyCandidateTokens <- topTokens.traverseFilter(token => isBuyCandidate(token, recentScoreChanges))
     } yield clampedQuoteAmounts.zip(buyCandidateTokens).map {
       case (quote, buyCandidateToken) => BuyCandidate(buyCandidateToken.id, quote)

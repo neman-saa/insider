@@ -4,7 +4,7 @@ final case class TraderConfig(
   enabled: Boolean,
   recentScoreChangesBlocksLength: Int,
   minUsdForSingleMarket: BigDecimal,
-  maxTotalBalancePercentForSingleMarket: Int,
+  maxTotalBalancePercentForSingleMarket: BigDecimal,
   longScoreDrawdownPercentThreshold: BigDecimal,
   shortScoreDrawdownPercentThreshold: BigDecimal,
 )
