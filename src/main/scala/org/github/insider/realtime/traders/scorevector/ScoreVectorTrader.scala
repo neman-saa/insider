@@ -1,6 +1,7 @@
 package org.github.insider.realtime.traders.scorevector
 
-import cats.effect.Clock
+import cats.Applicative
+import cats.effect.{Clock, Sync}
 import cats.effect.kernel.Async
 import org.github.insider.polymarket.client.TradingClient
 import org.github.insider.realtime.traders.TraderConfig
@@ -19,22 +20,27 @@ class ScoreVectorTrader[F[_]: Async](
 )(logger: Logger[F]) {
 
   def trade: F[Unit] = {
-    for {
-      activePositions <- tradingClient.positions()
+    tokensInfoRegistry.recentScoreChangesLength.flatMap { recentScoreChangesLength =>
+      if (recentScoreChangesLength < traderConfig.recentScoreChangesBlocksLength)
+        Applicative[F].unit
+      else
+        for {
+          activePositions <- tradingClient.positions()
 
-      recentScoreChanges <- tokensInfoRegistry.recentScoreChanges
+          recentScoreChanges <- tokensInfoRegistry.recentScoreChanges
 
-      sellCandidates <- getSellCandidates(activePositions, recentScoreChanges)
-      sellAuditLogs  <- sellCandidates.traverse(performSell)
-      _              <- sellAuditLogs.flatten.traverse(opAuditor.audit)
+          sellCandidates <- getSellCandidates(activePositions, recentScoreChanges)
+          sellAuditLogs  <- sellCandidates.traverse(performSell)
+          _              <- sellAuditLogs.flatten.traverse(opAuditor.audit)
 
-      balance        <- tradingClient.balance()
-      portfolioValue <- tradingClient.portfolioValue()
+          balance        <- tradingClient.balance()
+          portfolioValue <- tradingClient.portfolioValue()
 
-      buyCandidates <- getBuyCandidates(balance, portfolioValue)
-      buyAuditLogs  <- buyCandidates.traverse(performBuy)
-      _             <- buyAuditLogs.flatten.traverse(opAuditor.audit)
-    } yield ()
+          buyCandidates <- getBuyCandidates(balance, portfolioValue)
+          buyAuditLogs  <- buyCandidates.traverse(performBuy)
+          _             <- buyAuditLogs.flatten.traverse(opAuditor.audit)
+        } yield ()
+    }
   }
 
   private def getSellCandidates(
@@ -122,7 +128,6 @@ class ScoreVectorTrader[F[_]: Async](
     }
   }
 
-  // max score
   private def getBuyCandidates(
     balance: BigDecimal,
     portfolioValue: BigDecimal,

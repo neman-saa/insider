@@ -58,7 +58,7 @@ object Main extends IOApp.Simple {
           tokensInfoRepository,
           cleanUpPeriod = 5.minutes,
           config.wallets.secondsToSellBeforeResolve,
-          config.wallets.checkLastNBlocks,
+          config.trader.recentScoreChangesBlocksLength,
         )
         .toResource
 

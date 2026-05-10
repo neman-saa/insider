@@ -14,7 +14,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
   registryR: Ref[F, Map[TokenId, TokenInfo]],
   recentScoreChangesR: Ref[F, List[Map[TokenId, BigDecimal]]],
   secondsToSellBeforeResolve: Int,
-  recentHistoryLengthBlocks: Int,
+  recentScoreChangesBlocksLength: Int,
 ) {
 
   /**
@@ -50,7 +50,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
       }
 
     recentScoreChangesR.update { allChanges =>
-      val toDrop = Math.min(0, allChanges.length + batchScoreChanges.length - recentHistoryLengthBlocks)
+      val toDrop = Math.min(0, allChanges.length + batchScoreChanges.length - recentScoreChangesBlocksLength)
 
       allChanges.drop(toDrop).appendedAll(batchScoreChanges)
     }
@@ -153,6 +153,9 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     }
   }
 
+  def recentScoreChangesLength: F[Int] =
+    recentScoreChangesR.get.map(_.length)
+
   def recentScoreChanges: F[Map[TokenId, BigDecimal]] = {
     for {
       recentScoreChanges      <- recentScoreChangesR.get
@@ -175,7 +178,7 @@ object TokensInfoRegistry {
     tokensInfoRepository: TokensInfoRepository[F],
     cleanUpPeriod: FiniteDuration,
     secondsToSellBeforeResolve: Int,
-    recentHistoryLengthBlocks: Int
+    recentScoreChangesBlocksLength: Int
   ): F[TokensInfoRegistry[F]] =
     for {
       now                 <- Clock[F].realTimeInstant
@@ -186,7 +189,7 @@ object TokensInfoRegistry {
         registryR,
         recentScoreChangesR,
         secondsToSellBeforeResolve,
-        recentHistoryLengthBlocks,
+        recentScoreChangesBlocksLength,
       )
       _ <- fs2.Stream.repeatEval(tokenRegistry.cleanUpAction).metered(cleanUpPeriod).compile.drain.start
     } yield tokenRegistry
