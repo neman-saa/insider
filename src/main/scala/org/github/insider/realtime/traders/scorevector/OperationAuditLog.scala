@@ -11,11 +11,17 @@ sealed trait OperationAuditLog {
 
   def momentScore: Option[BigDecimal]
 
-  def price: BigDecimal
-
   def side: Side
 
   def timestamp: Instant
+
+  def totalPrice: BigDecimal
+
+  def totalShares: BigDecimal
+
+  def prevSingleTokenPrice: Option[BigDecimal]
+
+  def singleTokenPrice: BigDecimal
 }
 
 object OperationAuditLog {
@@ -23,7 +29,10 @@ object OperationAuditLog {
   final case class BuyAuditLog(
     tokenId: TokenId,
     momentScore: Option[BigDecimal],
-    price: BigDecimal,
+    totalPrice: BigDecimal,
+    totalShares: BigDecimal,
+    prevSingleTokenPrice: Option[BigDecimal],
+    singleTokenPrice: BigDecimal,
     timestamp: Instant,
   ) extends OperationAuditLog {
     override def side: Side = Side.Buy
@@ -32,7 +41,10 @@ object OperationAuditLog {
   final case class SellAuditLog(
     tokenId: TokenId,
     momentScore: Option[BigDecimal],
-    price: BigDecimal,
+    totalPrice: BigDecimal,
+    totalShares: BigDecimal,
+    prevSingleTokenPrice: Option[BigDecimal],
+    singleTokenPrice: BigDecimal,
     timestamp: Instant,
   ) extends OperationAuditLog {
     override def side: Side = Sell

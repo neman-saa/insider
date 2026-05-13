@@ -10,7 +10,7 @@ import org.github.insider.polymarket.domain.Side
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import java.time.{Instant, ZonedDateTime}
+import java.time.ZonedDateTime
 
 trait OperationsAuditRepository[F[_]] {
   def insert(auditLog: OperationAuditLog): F[Unit]
@@ -33,25 +33,87 @@ object OperationsAuditRepository {
 
     private def insertQuery(auditLog: OperationAuditLog): Fragment =
       fr"""
-        |INSERT INTO operations_audit (token_id, side, moment_score, price, timestamp)
-        |VALUES (${auditLog.tokenId}, ${auditLog.side}, ${auditLog.momentScore}, ${auditLog.price}, ${auditLog.timestamp})
+        |INSERT INTO operations_audit (
+        |   token_id, 
+        |   side,
+        |   moment_score, 
+        |   total_price, 
+        |   total_shares, 
+        |   prev_single_token_price, 
+        |   single_token_price,
+        |   timestamp
+        |)
+        |VALUES (
+        |   ${auditLog.tokenId}, 
+        |   ${auditLog.side}, 
+        |   ${auditLog.momentScore}, 
+        |   ${auditLog.totalPrice}, 
+        |   ${auditLog.totalShares}, 
+        |   ${auditLog.prevSingleTokenPrice}, 
+        |   ${auditLog.singleTokenPrice}, 
+        |   ${auditLog.timestamp}
+        |)
         |""".stripMargin
 
     override def selectAll: F[List[OperationAuditLog]] =
       selectAllQuery
-        .query[(String, Side, Option[BigDecimal], BigDecimal, ZonedDateTime)]
+        .query[
+          (String, Side, Option[BigDecimal], BigDecimal, BigDecimal, Option[BigDecimal], BigDecimal, ZonedDateTime)
+        ]
         .map[OperationAuditLog] {
-          case (tokenId, Side.Buy, momentScore, price, timestamp) =>
-            OperationAuditLog.BuyAuditLog(tokenId, momentScore, price, timestamp.toInstant)
-          case (tokenId, Side.Sell, momentScore, price, timestamp) =>
-            OperationAuditLog.SellAuditLog(tokenId, momentScore, price, timestamp.toInstant)
+          case (
+                tokenId,
+                Side.Buy,
+                momentScore,
+                totalPrice,
+                totalShares,
+                prevSingleTokenPrice,
+                singleTokenPrice,
+                timestamp
+              ) =>
+            OperationAuditLog.BuyAuditLog(
+              tokenId,
+              momentScore,
+              totalPrice,
+              totalShares,
+              prevSingleTokenPrice,
+              singleTokenPrice,
+              timestamp.toInstant
+            )
+          case (
+                tokenId,
+                Side.Sell,
+                momentScore,
+                totalPrice,
+                totalShares,
+                prevSingleTokenPrice,
+                singleTokenPrice,
+                timestamp
+              ) =>
+            OperationAuditLog.SellAuditLog(
+              tokenId,
+              momentScore,
+              totalPrice,
+              totalShares,
+              prevSingleTokenPrice,
+              singleTokenPrice,
+              timestamp.toInstant
+            )
         }
         .to[List]
         .transact(transactor)
 
     private def selectAllQuery: Fragment =
       fr"""
-        |SELECT token_id, side, moment_score, price, timestamp
+        |SELECT
+        |   token_id, 
+        |   side,
+        |   moment_score, 
+        |   total_price, 
+        |   total_shares, 
+        |   prev_single_token_price, 
+        |   single_token_price,
+        |   timestamp
         |FROM operations_audit
         |""".stripMargin
   }

@@ -94,7 +94,7 @@ class ScoreVectorTrader[F[_]: Async](
             } else if (longExceeded) {
               logger.info(s"Significant long score change for token ${position.asset}: $longScoreChangePercent") >>
                 position.some.pure[F]
-            } else if (tokenInfo.price >= BigDecimal(0.98) && buyLog.price < BigDecimal(0.98)) {
+            } else if (tokenInfo.price >= BigDecimal(0.99) && buyLog.singleTokenPrice < BigDecimal(0.99)) {
               logger.info(s"Early exit for profitable token ${position.asset}") >>
                 position.some.pure[F]
             } else none[Position].pure[F]
@@ -122,8 +122,15 @@ class ScoreVectorTrader[F[_]: Async](
       now             <- Clock[F].realTimeInstant
       tokenInfo       <- tokensInfoRegistry.getTokenInfo(sellCandidate.tokenId)
       sellOrderResult <- tradingClient.sell(sellCandidate.tokenId, sellCandidate.size, minPrice = None)
-      auditLog         = SellAuditLog(sellCandidate.tokenId, tokenInfo.map(_.score), sellOrderResult.totalPrice, now)
-    } yield auditLog.some
+    } yield SellAuditLog(
+      tokenId              = sellCandidate.tokenId,
+      momentScore          = tokenInfo.map(_.score),
+      totalPrice           = sellOrderResult.totalPrice,
+      totalShares          = sellOrderResult.amount,
+      prevSingleTokenPrice = tokenInfo.map(_.price),
+      singleTokenPrice     = sellOrderResult.totalPrice / (sellOrderResult.amount / BigDecimal(1_000_000)),
+      timestamp            = now,
+    ).some
 
     sellAction.handleErrorWith { error =>
       logger.error(error)(s"Unsuccessful sell operation for $sellCandidate") as none[SellAuditLog]
@@ -135,10 +142,14 @@ class ScoreVectorTrader[F[_]: Async](
     portfolioValue: BigDecimal,
     recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[List[BuyCandidate]] = {
-    val maxUsdForSingleMarket = (balance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
+    // leave 1 USD in balance to cover fees
+    val tradingBalance = (balance - BigDecimal(1)).max(BigDecimal(0))
 
-    val maxUsdMarketsCount = (balance quot maxUsdForSingleMarket).toInt
-    val reminder           = balance % maxUsdForSingleMarket
+    val maxUsdForSingleMarket =
+      (tradingBalance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
+
+    val maxUsdMarketsCount = (tradingBalance quot maxUsdForSingleMarket).toInt
+    val reminder           = tradingBalance % maxUsdForSingleMarket
 
     // distribution of available balance to new markets
     val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
@@ -148,7 +159,12 @@ class ScoreVectorTrader[F[_]: Async](
       topTokens          <- tokensInfoRegistry.topTokensInfo
       buyCandidateTokens <- topTokens.traverseFilter(token => isBuyCandidate(token, recentScoreChanges))
     } yield clampedQuoteAmounts.zip(buyCandidateTokens).map {
-      case (quote, buyCandidateToken) => BuyCandidate(buyCandidateToken.id, quote)
+      case (quote, buyCandidateToken) =>
+        BuyCandidate(
+          tokenId  = buyCandidateToken.id,
+          money    = quote,
+          maxPrice = (buyCandidateToken.price + traderConfig.maxBuyPriceAddCents).max(BigDecimal(1)).some,
+        )
     }
   }
 
@@ -179,9 +195,16 @@ class ScoreVectorTrader[F[_]: Async](
     val buyAction = for {
       now            <- Clock[F].realTimeInstant
       tokenInfo      <- tokensInfoRegistry.getTokenInfo(buyCandidate.tokenId)
-      buyOrderResult <- tradingClient.buy(buyCandidate.tokenId, buyCandidate.money, maxPrice = None)
-      auditLog        = BuyAuditLog(buyCandidate.tokenId, tokenInfo.map(_.score), buyOrderResult.totalPrice, now)
-    } yield auditLog.some
+      buyOrderResult <- tradingClient.buy(buyCandidate.tokenId, buyCandidate.money, buyCandidate.maxPrice)
+    } yield BuyAuditLog(
+      tokenId              = buyCandidate.tokenId,
+      momentScore          = tokenInfo.map(_.score),
+      totalPrice           = buyOrderResult.totalPrice,
+      totalShares          = buyOrderResult.amount,
+      prevSingleTokenPrice = tokenInfo.map(_.price),
+      singleTokenPrice     = buyOrderResult.totalPrice / (buyOrderResult.amount / BigDecimal(1_000_000)),
+      timestamp            = now,
+    ).some
 
     buyAction.handleErrorWith { error =>
       logger.error(error)(s"Unsuccessful buy operation for $buyCandidate") as none[BuyAuditLog]

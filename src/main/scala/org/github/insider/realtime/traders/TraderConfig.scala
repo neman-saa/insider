@@ -7,4 +7,5 @@ final case class TraderConfig(
   maxTotalBalancePercentForSingleMarket: BigDecimal,
   longScoreDrawdownPercentThreshold: BigDecimal,
   shortScoreDrawdownPercentThreshold: BigDecimal,
+  maxBuyPriceAddCents: BigDecimal,
 )
