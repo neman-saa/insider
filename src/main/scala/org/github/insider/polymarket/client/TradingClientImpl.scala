@@ -65,8 +65,10 @@ private class TradingClientImpl[F[_]: Async](
                 s"${result.amount} tokens $tokenId bought successful with price ${result.totalPrice}"
               ) >> result.pure[F]
             case Left(error) =>
-              logger.error(s"Error parsing buy order result from response: ${error.getMessage}") >> Async[F]
-                .raiseError(new Throwable(error))
+              logger.error(s"Error parsing buy order result from response: ${error.getMessage}") >> BuyOrderResult(
+                -1,
+                -1
+              ).pure[F]
           }
       case other =>
         other.as[Json].flatMap { json =>
@@ -110,8 +112,10 @@ private class TradingClientImpl[F[_]: Async](
                 s"${result.amount} tokens $tokenId sold successful with price ${result.totalPrice}"
               ) >> result.pure[F]
             case Left(error) =>
-              logger.error(s"Error parsing sell order result from response: ${error.getMessage}") >> Async[F]
-                .raiseError(new Throwable(error))
+              logger.error(s"Error parsing sell order result from response: ${error.getMessage}") >> SellOrderResult(
+                -1,
+                -1
+              ).pure[F]
           }
       case other =>
         other.as[Json].flatMap { json =>
