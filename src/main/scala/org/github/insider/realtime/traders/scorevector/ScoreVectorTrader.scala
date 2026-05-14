@@ -190,10 +190,12 @@ class ScoreVectorTrader[F[_]: Async](
 
       // buy first time or re-buy if recent score shows positive vector
       case _ =>
-        val hasPositiveScoreVector: Boolean =
-          recentScoreChanges.get(tokenInfo.id).forall(recentScoreChange => recentScoreChange > 0)
+        val shortScoreChangePercent: Option[BigDecimal] =
+          recentScoreChanges.get(tokenInfo.id).flatMap { recentScoreChange =>
+            Try(tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1).toOption
+          }
 
-        if (hasPositiveScoreVector)
+        if (shortScoreChangePercent.forall(_ > -(traderConfig.shortScoreDrawdownPercentThreshold / 100)))
           tokenInfo.some.pure[F]
         else
           none[EffectiveTokenInfo].pure[F]

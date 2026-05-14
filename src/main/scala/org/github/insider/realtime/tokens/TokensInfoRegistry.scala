@@ -172,7 +172,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     Clock[F].realTimeInstant.flatMap { now =>
       registryR.update { registry =>
         registry.filter {
-          case (_, tokenInfo) => tokenInfo.resolveDate.isAfter(now)
+          case (_, tokenInfo) => tokenInfo.resolveDate.plusSeconds(60L * 60L * 24L).isAfter(now)
         }
       }
     }
