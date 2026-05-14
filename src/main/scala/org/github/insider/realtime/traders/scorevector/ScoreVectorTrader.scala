@@ -12,6 +12,7 @@ import org.github.insider.realtime.tokens.{EffectiveTokenInfo, TokenId, TokenInf
 import org.github.insider.realtime.traders.scorevector.OperationAuditLog.{BuyAuditLog, SellAuditLog}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
+import scala.annotation.tailrec
 import scala.util.Try
 
 class ScoreVectorTrader[F[_]: Async](
@@ -31,16 +32,17 @@ class ScoreVectorTrader[F[_]: Async](
 
           recentScoreChanges <- tokensInfoRegistry.recentScoreChanges
 
-          sellCandidates <- getSellCandidates(activePositions, recentScoreChanges)
-          sellAuditLogs  <- sellCandidates.traverse(performSell)
-          _              <- sellAuditLogs.flatten.traverse(opAuditor.audit)
+          sellCandidates     <- getSellCandidates(activePositions, recentScoreChanges)
+          maybeSellAuditLogs <- sellCandidates.traverse(performSell)
+          sellAuditLogs       = maybeSellAuditLogs.flatten
+          _                  <- sellAuditLogs.traverse(opAuditor.audit)
 
-          balance        <- tradingClient.balance()
-          portfolioValue <- tradingClient.portfolioValue()
+          balance <- tradingClient.balance()
 
-          buyCandidates <- getBuyCandidates(balance, portfolioValue, recentScoreChanges)
-          buyAuditLogs  <- buyCandidates.traverse(performBuy)
-          _             <- buyAuditLogs.flatten.traverse(opAuditor.audit)
+          buyCandidates     <- getBuyCandidates(balance, activePositions.size - sellAuditLogs.size, recentScoreChanges)
+          maybeBuyAuditLogs <- buyCandidates.traverse(performBuy)
+          buyAuditLogs       = maybeBuyAuditLogs.flatten
+          _                 <- buyAuditLogs.traverse(opAuditor.audit)
         } yield ()
     }
   }
@@ -139,20 +141,16 @@ class ScoreVectorTrader[F[_]: Async](
 
   private def getBuyCandidates(
     balance: BigDecimal,
-    portfolioValue: BigDecimal,
+    activeMarketsCount: Int,
     recentScoreChanges: Map[TokenId, BigDecimal],
   ): F[List[BuyCandidate]] = {
     // leave 1 USD in balance to cover fees
     val tradingBalance = (balance - BigDecimal(1)).max(BigDecimal(0))
 
-    val maxUsdForSingleMarket =
-      (tradingBalance + portfolioValue) * (traderConfig.maxTotalBalancePercentForSingleMarket / 100)
+    val (marketsCountToBuy, quote) =
+      getBuyMarketsCountWithQuotes(tradingBalance, traderConfig.maxActiveMarketsCount - activeMarketsCount)
 
-    val maxUsdMarketsCount = (tradingBalance quot maxUsdForSingleMarket).toInt
-    val reminder           = tradingBalance % maxUsdForSingleMarket
-
-    // distribution of available balance to new markets
-    val quoteAmounts        = List.fill(n = maxUsdMarketsCount)(elem = maxUsdForSingleMarket) :+ reminder
+    val quoteAmounts        = List.fill(n = marketsCountToBuy)(elem = quote)
     val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
 
     for {
@@ -168,6 +166,19 @@ class ScoreVectorTrader[F[_]: Async](
     }
   }
 
+  @tailrec
+  private def getBuyMarketsCountWithQuotes(balance: BigDecimal, maxMarketsCount: Int): (Int, BigDecimal) = {
+    if (maxMarketsCount <= 0 || balance < traderConfig.minUsdForSingleMarket) (0, 0)
+    else {
+      val quote = balance / BigDecimal(maxMarketsCount)
+
+      if (quote < traderConfig.minUsdForSingleMarket)
+        getBuyMarketsCountWithQuotes(balance, maxMarketsCount / 2)
+      else
+        (maxMarketsCount, quote)
+    }
+  }
+
   private def isBuyCandidate(
     tokenInfo: EffectiveTokenInfo,
     recentScoreChanges: Map[TokenId, BigDecimal],
@@ -177,11 +188,8 @@ class ScoreVectorTrader[F[_]: Async](
       case Some(buyLog: BuyAuditLog) =>
         none[EffectiveTokenInfo].pure[F]
 
-      // consider to re-buy if recent score shows positive vector
-      case Some(sellLog: SellAuditLog) =>
-        none[EffectiveTokenInfo].pure[F]
-
-      case None =>
+      // buy first time or re-buy if recent score shows positive vector
+      case _ =>
         val hasPositiveScoreVector: Boolean =
           recentScoreChanges.get(tokenInfo.id).forall(recentScoreChange => recentScoreChange > 0)
 
