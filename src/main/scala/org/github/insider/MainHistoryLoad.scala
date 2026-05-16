@@ -54,7 +54,7 @@ object MainHistoryLoad extends IOApp.Simple {
           tradesRepository,
           aggregatedTradesRepository,
           contracts,
-        )(step = 100, nWorkers = 5)
+        )(step = 50, nWorkers = 5)
         .toResource
     } yield (tradesWorker, eventsWorker)
 
