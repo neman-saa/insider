@@ -41,7 +41,7 @@ object MainHistoryLoad extends IOApp.Simple {
       eventsImpl         <- EventsImpl.of[IO](transactor).toResource
 
       eventsWorker <- EventsExtractorWorkerGroup
-        .of[IO](eventClient, marketsImpl, eventsImpl, limit = 100)(workersNumber = 5)
+        .of[IO](eventClient, marketsImpl, eventsImpl, limit = 50)(workersNumber = 5)
         .toResource
 
       contracts          = if (isOldContracts) config.oldPolygonContracts else config.polygonContracts
