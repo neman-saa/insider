@@ -158,6 +158,36 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     }
   }
 
+  def topRecentTokensInfo: F[List[EffectiveTokenInfo]] = for {
+    now     <- Clock[F].realTimeInstant
+    changes <- recentScoreChanges
+    sortedChanges = changes
+      .toList
+      .filter { case (_, change) => change > 0 }
+      .sortBy { case (_, recentScore) => -recentScore }
+      .map { case (tokenId, _) => tokenId }
+    infos <- sortedChanges
+      .traverse { tokenId =>
+        for {
+          mbTokenInfo <- getTokenInfo(tokenId)
+          mbEffectiveTokenInfo = mbTokenInfo.map { tokenInfo =>
+            val timeToResolve =
+              (tokenInfo.resolveDate.getEpochSecond - now.getEpochSecond).max(1)
+            val efficiency = (1 - tokenInfo.price) * tokenInfo.score / timeToResolve
+            EffectiveTokenInfo(
+              id          = tokenInfo.id,
+              efficiency  = efficiency,
+              price       = tokenInfo.price,
+              score       = tokenInfo.score,
+              maxScore    = tokenInfo.maxScore,
+              resolveDate = tokenInfo.resolveDate,
+            )
+          }
+        } yield mbEffectiveTokenInfo
+      }
+      .map(_.flatten)
+  } yield infos
+
   def recentScoreChangesLength: F[Int] =
     recentScoreChangesR.get.map(_.length)
 

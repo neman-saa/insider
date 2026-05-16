@@ -151,10 +151,10 @@ class ScoreVectorTrader[F[_]: Async](
       getBuyMarketsCountWithQuotes(tradingBalance, traderConfig.maxActiveMarketsCount - activeMarketsCount)
 
     val quoteAmounts        = List.fill(n = marketsCountToBuy)(elem = quote)
-    val clampedQuoteAmounts = quoteAmounts.filter(price => price > traderConfig.minUsdForSingleMarket)
+    val clampedQuoteAmounts = quoteAmounts.filter(_ > traderConfig.minUsdForSingleMarket)
 
     for {
-      topTokens          <- tokensInfoRegistry.topTokensInfo
+      topTokens          <- tokensInfoRegistry.topRecentTokensInfo
       buyCandidateTokens <- topTokens.traverseFilter(token => isBuyCandidate(token, recentScoreChanges))
     } yield clampedQuoteAmounts.zip(buyCandidateTokens).map {
       case (quote, buyCandidateToken) =>
@@ -190,15 +190,15 @@ class ScoreVectorTrader[F[_]: Async](
 
       // buy first time or re-buy if recent score shows positive vector
       case _ =>
-        val shortScoreChangePercent: Option[BigDecimal] =
-          recentScoreChanges.get(tokenInfo.id).flatMap { recentScoreChange =>
-            Try(tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1).toOption
-          }
+//        val shortScoreChangePercent: Option[BigDecimal] =
+//          recentScoreChanges.get(tokenInfo.id).flatMap { recentScoreChange =>
+//            Try(tokenInfo.score / (tokenInfo.score - recentScoreChange) - 1).toOption
+//          }
 
-        if (shortScoreChangePercent.forall(_ > -(traderConfig.shortScoreDrawdownPercentThreshold / 100)))
-          tokenInfo.some.pure[F]
-        else
-          none[EffectiveTokenInfo].pure[F]
+//        if (shortScoreChangePercent.forall(_ > -(traderConfig.shortScoreDrawdownPercentThreshold / 100)))
+        tokenInfo.some.pure[F]
+//        else
+//          none[EffectiveTokenInfo].pure[F]
     }
 
   private def performBuy(buyCandidate: BuyCandidate): F[Option[BuyAuditLog]] = {
