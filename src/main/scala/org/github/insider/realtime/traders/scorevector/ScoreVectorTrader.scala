@@ -161,7 +161,7 @@ class ScoreVectorTrader[F[_]: Async](
         BuyCandidate(
           tokenId  = buyCandidateToken.id,
           money    = quote,
-          maxPrice = (buyCandidateToken.price + traderConfig.maxBuyPriceAddCents).max(BigDecimal(0.99)).some,
+          maxPrice = (buyCandidateToken.price + traderConfig.maxBuyPriceAddCents).min(BigDecimal(0.99)).some,
         )
     }
   }
