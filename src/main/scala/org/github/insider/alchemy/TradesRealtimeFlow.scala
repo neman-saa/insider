@@ -48,27 +48,27 @@ class TradesRealtimeFlow[F[_]: Async](
         latestProcessedBlock <- latestProcessedBlockR.get
         toBlock               = latestProcessedBlock + 100
 
-//        standardCtfTransfers <- getAssetsTransfersInRange(
-//          fromBlock = latestProcessedBlock + 1,
-//          toBlock   = toBlock,
-//          contract  = polygonContracts.standardCtf,
-//        )
+        standardCtfTransfers <- getAssetsTransfersInRange(
+          fromBlock = latestProcessedBlock + 1,
+          toBlock   = toBlock,
+          contract  = polygonContracts.standardCtf,
+        )
         negRiskCtfTransfers <- getAssetsTransfersInRange(
           fromBlock = latestProcessedBlock + 1,
           toBlock   = toBlock,
           contract  = polygonContracts.negRiskCtf,
         )
-//        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers, CTFType.StandardCTF)
-        negRiskCtfTrades = transfersProcessor.extractTradesFrom(negRiskCtfTransfers, CTFType.NegRiskCTF)
+        standardCtfTrades = transfersProcessor.extractTradesFrom(standardCtfTransfers, CTFType.StandardCTF)
+        negRiskCtfTrades  = transfersProcessor.extractTradesFrom(negRiskCtfTransfers, CTFType.NegRiskCTF)
 
-//        _ <- logger.info(
-//          s"Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
-//        )
+        _ <- logger.info(
+          s"Standard CTF transfers fetched - ${standardCtfTransfers.size}, trades extracted - ${standardCtfTrades.size}"
+        )
         _ <- logger.info(
           s"Neg Risk CTF transfers fetched - ${negRiskCtfTransfers.size}, trades extracted - ${negRiskCtfTrades.size}"
         )
 
-        trades = negRiskCtfTrades
+        trades = (negRiskCtfTrades ++ standardCtfTrades)
           .filter(trade => trade.singleTokenPrice >= 0.01 && trade.singleTokenPrice <= 0.99)
           .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
