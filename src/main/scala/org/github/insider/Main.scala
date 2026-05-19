@@ -15,7 +15,7 @@ import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
-import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl, TradingClientImpl}
+import org.github.insider.polymarket.client.{EventsClientImpl, SimulatedTradingClient, TagsClientImpl, TradingClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
@@ -48,6 +48,7 @@ object Main extends IOApp.Simple {
       eventClient     <- EventsClientImpl.of[IO](client).toResource
       transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
       tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
+      simulatedTradingClient <- SimulatedTradingClient.of[IO](tradingClient, 1000, Map.empty).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
