@@ -70,7 +70,7 @@ object Main extends IOApp.Simple {
       tgBackend <- HttpClientCatsBackend.resource[IO]()
       insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(
         followTokens,
-        tradingClient
+        simulatedTradingClient
       )
       _ <- runForeverTgPolling(insiderBot).start.toResource
 
@@ -85,7 +85,7 @@ object Main extends IOApp.Simple {
 
       trader <- ScoreVectorTrader
         .of(
-          tradingClient,
+          simulatedTradingClient,
           tokensInfoRegistry,
           opAuditor,
           config.trader,
