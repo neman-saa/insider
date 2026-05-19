@@ -73,7 +73,7 @@ class TradesRealtimeFlow[F[_]: Async](
           .filterNot(_.makerAddress.toLowerCase == "0xa1db359bd1ea4f98eb4cc76e2c37197b3faf594c")
 
         leaderboard       <- leaderboards.getLeaderboard
-        tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId))
+        tokensMetaInfo    <- eventsCached.getTokensMetaInfo(trades.map(_.tokenId).toSet)
         updatedTokensInfo <- tokensInfoRegistry.updateWith(trades, tokensMetaInfo, leaderboard)
 
         _ <- Applicative[F].whenA(traderEnabled)(trader.trade)

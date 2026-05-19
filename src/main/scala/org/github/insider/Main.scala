@@ -15,7 +15,12 @@ import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
-import org.github.insider.polymarket.client.{EventsClientImpl, SimulatedTradingClient, TagsClientImpl, TradingClientImpl}
+import org.github.insider.polymarket.client.{
+  EventsClientImpl,
+  SimulatedTradingClient,
+  TagsClientImpl,
+  TradingClientImpl
+}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup

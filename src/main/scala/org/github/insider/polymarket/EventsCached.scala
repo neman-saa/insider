@@ -12,12 +12,13 @@ import org.github.insider.realtime.tokens.{TokenId, TokenMetaInfo}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 class EventsCached[F[_]: Async](logger: Logger[F], cache: Cache[F, TokenId, Event], eventsClient: EventsClient[F]) {
 
-  def getTokensMetaInfo(tokenIds: List[TokenId]): F[Map[TokenId, TokenMetaInfo]] = {
+  def getTokensMetaInfo(tokenIds: Set[TokenId]): F[Map[TokenId, TokenMetaInfo]] = {
     tokenIds
+      .toList
       .traverse { tokenId =>
         getEvent(tokenId).map { maybeEvent =>
           val maybeMarket = maybeEvent.flatMap(event =>
@@ -54,8 +55,8 @@ object EventsCached {
     for {
       cache <- Cache.expiring[F, String, Event](
         config = ExpiringCache.Config(
-          expireAfterRead  = 1.hour,
-          expireAfterWrite = Some(10.minute)
+          expireAfterRead  = 3.hour,
+          expireAfterWrite = Some(3.hour)
         )
       )
       logger <- Slf4jLogger.create[F].toResource
