@@ -15,7 +15,7 @@ import org.github.insider.leaderboard.Leaderboards
 import org.github.insider.notifications.services.InsiderTelegramBot
 import org.github.insider.persistance.Database
 import org.github.insider.polymarket.{EventsCached, EventsRealtimeFlow}
-import org.github.insider.polymarket.client.{EventsClientImpl, TagsClientImpl, TradingClientImpl}
+import org.github.insider.polymarket.client.{EventsClientImpl, SimulatedTradingClient, TagsClientImpl, TradingClientImpl}
 import org.github.insider.polymarket.configs.MainConfig
 import org.github.insider.polymarket.repository.{EventsImpl, MarketsImpl}
 import org.github.insider.polymarket.workers.EventsExtractorWorkerGroup
@@ -47,7 +47,11 @@ object Main extends IOApp.Simple {
       client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
       eventClient     <- EventsClientImpl.of[IO](client).toResource
       transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
-      tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
+      realTradingClient <- TradingClientImpl.of[IO](client, config.polymarket).toResource
+      tradingClient     <- SimulatedTradingClient.of[IO](
+        realClient = realTradingClient,
+        initialBalance = BigDecimal(1000),
+      ).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
