@@ -280,7 +280,7 @@ private class TradingClientImpl[F[_]: Async](
 
   override def ordersList(tokenId: String): F[List[Order]] = {
     val uri: Uri =
-      DataApiHost
+      ClobApiHost
         .addSegment("book")
         .withQueryParam("token_id", tokenId)
 
