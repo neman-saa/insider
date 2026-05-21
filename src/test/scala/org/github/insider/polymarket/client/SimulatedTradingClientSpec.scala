@@ -42,7 +42,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
 
   private def mkSim(
     books: Map[String, List[Order]],
-    initialBalance: BigDecimal = BigDecimal(100),
+    initialBalance: BigDecimal                = BigDecimal(100),
     initialPortfolio: Map[String, BigDecimal] = Map.empty,
   ): IO[TradingClient[IO]] =
     SimulatedTradingClient.of[IO](new BookStub(books), initialBalance, initialPortfolio)
@@ -66,7 +66,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
     val asks = List(
       SellOrder(size = 10, price = BigDecimal("0.50")), // unsorted on purpose
       SellOrder(size = 20, price = BigDecimal("0.30")),
-      SellOrder(size = 5, price = BigDecimal("0.40")),
+      SellOrder(size = 5, price  = BigDecimal("0.40")),
     )
     // budget = 100. Order after sort: 0.30 x 20 (=6), 0.40 x 5 (=2), 0.50 x 10 (=5) → total 13 USDC, 35 shares
     for {
@@ -159,7 +159,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
 
   test("sell: walks multiple bid levels in descending price order") {
     val bids = List(
-      BuyOrder(size = 5, price = BigDecimal("0.50")), // unsorted on purpose
+      BuyOrder(size = 5, price  = BigDecimal("0.50")), // unsorted on purpose
       BuyOrder(size = 10, price = BigDecimal("0.70")),
       BuyOrder(size = 20, price = BigDecimal("0.60")),
     )
@@ -186,7 +186,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
 
   test("sell: respects minPrice and stops when bid.price < minPrice") {
     val bids = List(
-      BuyOrder(size = 5, price = BigDecimal("0.70")),
+      BuyOrder(size = 5, price  = BigDecimal("0.70")),
       BuyOrder(size = 30, price = BigDecimal("0.40")), // skipped, below floor
     )
     for {
@@ -226,7 +226,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
   test("buyOrder: IOC fill against book; unfilled budget is dropped") {
     // Limit buy 50 shares @ 0.40. Book offers only 10 @ 0.40, rest @ 0.55.
     val asks = List(
-      SellOrder(size = 10, price = BigDecimal("0.40")),
+      SellOrder(size = 10, price  = BigDecimal("0.40")),
       SellOrder(size = 100, price = BigDecimal("0.55")),
     )
     for {
@@ -240,7 +240,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
 
   test("sellOrder: IOC fill against book; unfilled remainder is dropped") {
     val bids = List(
-      BuyOrder(size = 10, price = BigDecimal("0.70")),
+      BuyOrder(size = 10, price  = BigDecimal("0.70")),
       BuyOrder(size = 100, price = BigDecimal("0.40")),
     )
     for {
@@ -263,7 +263,7 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
       sim <- mkSim(books, initialBalance = BigDecimal(50), initialPortfolio = Map(Token -> 10, Token2 -> 20))
       v   <- sim.portfolioValue()
     } yield // cash 50 + Token: 10 * 0.60 = 6 + Token2: 20 * 0.20 = 4 → 60
-    expect(v == BigDecimal(60))
+      expect(v == BigDecimal(60))
   }
 
   test("portfolioValue: empty bid side ⇒ position valued at zero") {
@@ -282,13 +282,13 @@ object SimulatedTradingClientSpec extends SimpleIOSuite {
     val bids = List(BuyOrder(size = 20, price = BigDecimal("0.30")))
     for {
       snapshots <- Ref.of[IO, Map[String, List[Order]]](Map(Token -> asks))
-      stub = new DynamicBookStub(snapshots)
-      sim     <- SimulatedTradingClient.of[IO](stub, initialBalance = BigDecimal(100))
-      _       <- sim.buy(Token, BigDecimal(8), maxPrice = None)
-      _       <- snapshots.set(Map(Token -> bids))
-      _       <- sim.sell(Token, BigDecimal(20), minPrice = None)
-      bal     <- sim.balance()
-      pos     <- sim.positions()
+      stub       = new DynamicBookStub(snapshots)
+      sim       <- SimulatedTradingClient.of[IO](stub, initialBalance = BigDecimal(100))
+      _         <- sim.buy(Token, BigDecimal(8), maxPrice = None)
+      _         <- snapshots.set(Map(Token -> bids))
+      _         <- sim.sell(Token, BigDecimal(20), minPrice = None)
+      bal       <- sim.balance()
+      pos       <- sim.positions()
     } yield expect(bal == BigDecimal(98)) and expect(pos.isEmpty)
   }
 

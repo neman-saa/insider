@@ -3,39 +3,28 @@ package org.github.insider.polymarket.client
 import cats.effect.{Async, Ref}
 import cats.effect.std.Semaphore
 import cats.syntax.all._
-import org.github.insider.polymarket.domain.{
-  BuyOrder,
-  BuyOrderResult,
-  Order,
-  Position,
-  SellOrder,
-  SellOrderResult
-}
+import org.github.insider.polymarket.domain.{BuyOrder, BuyOrderResult, Order, Position, SellOrder, SellOrderResult}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 /**
   * In-memory simulation of [[TradingClient]] for backtesting / dry-runs.
   *
-  * Pricing is driven by the real order book — `ordersList` is delegated to the
-  * underlying [[TradingClient]]. Balance (USDC) and portfolio (tokenId -> shares)
-  * are kept locally in `Ref`s and atomically updated on every fill.
+  * Pricing is driven by the real order book — `ordersList` is delegated to the underlying [[TradingClient]]. Balance
+  * (USDC) and portfolio (tokenId -> shares) are kept locally in `Ref`s and atomically updated on every fill.
   *
   * Behavior:
-  *  - `buy(money, maxPrice)` walks asks ascending by price, consuming liquidity until
-  *    the budget is spent or `maxPrice` is exceeded. If `balance < money` the call
-  *    fails fast with `IllegalStateException` before touching the book.
-  *  - `sell(shares, minPrice)` walks bids descending by price, consuming liquidity
-  *    until the requested size is filled or `minPrice` is violated. Cannot sell
-  *    more than what is currently held in the portfolio.
-  *  - `buyOrder` / `sellOrder` (limit) are simulated as IOC-style fills against
-  *    the book at or better than the limit price. Any unfilled remainder is
-  *    logged and dropped — resting orders are NOT persisted.
-  *  - `portfolioValue` marks every position at the current best bid (what we
-  *    could realistically sell for right now). Empty bid side ⇒ 0.
+  *   - `buy(money, maxPrice)` walks asks ascending by price, consuming liquidity until the budget is spent or
+  *     `maxPrice` is exceeded. If `balance < money` the call fails fast with `IllegalStateException` before touching
+  *     the book.
+  *   - `sell(shares, minPrice)` walks bids descending by price, consuming liquidity until the requested size is filled
+  *     or `minPrice` is violated. Cannot sell more than what is currently held in the portfolio.
+  *   - `buyOrder` / `sellOrder` (limit) are simulated as IOC-style fills against the book at or better than the limit
+  *     price. Any unfilled remainder is logged and dropped — resting orders are NOT persisted.
+  *   - `portfolioValue` marks every position at the current best bid (what we could realistically sell for right now).
+  *     Empty bid side ⇒ 0.
   *
-  * Concurrency: a fair `Semaphore(1)` serializes every mutating operation so
-  * that book-read + state-update is atomic.
+  * Concurrency: a fair `Semaphore(1)` serializes every mutating operation so that book-read + state-update is atomic.
   */
 private class SimulatedTradingClient[F[_]: Async](
   realClient: TradingClient[F],
@@ -59,8 +48,8 @@ private class SimulatedTradingClient[F[_]: Async](
               )
           else Async[F].unit
         book <- realClient.ordersList(tokenId)
-        asks = book.collect { case s: SellOrder => s }.sortBy(_.price)
-        fill = walkAsks(asks, money, maxPrice)
+        asks  = book.collect { case s: SellOrder => s }.sortBy(_.price)
+        fill  = walkAsks(asks, money, maxPrice)
         _ <-
           if (fill.size <= 0)
             logger.warn(
@@ -81,8 +70,8 @@ private class SimulatedTradingClient[F[_]: Async](
     lock.permit.use { _ =>
       for {
         portfolio <- portfolioRef.get
-        held   = portfolio.getOrElse(tokenId, BigDecimal(0))
-        toSell = held.min(shares)
+        held       = portfolio.getOrElse(tokenId, BigDecimal(0))
+        toSell     = held.min(shares)
         result <-
           if (toSell <= 0)
             logger.warn(s"[SIM] SELL $tokenId rejected: held=$held requested=$shares") *>
@@ -90,8 +79,8 @@ private class SimulatedTradingClient[F[_]: Async](
           else
             for {
               book <- realClient.ordersList(tokenId)
-              bids = book.collect { case b: BuyOrder => b }.sortBy(o => -o.price)
-              fill = walkBids(bids, toSell, minPrice)
+              bids  = book.collect { case b: BuyOrder => b }.sortBy(o => -o.price)
+              fill  = walkBids(bids, toSell, minPrice)
               _ <-
                 if (fill.size <= 0)
                   logger.warn(
@@ -115,9 +104,11 @@ private class SimulatedTradingClient[F[_]: Async](
   override def balance(): F[BigDecimal] = balanceRef.get
 
   override def positions(user: Option[String] = None): F[List[Position]] =
-    portfolioRef.get.map(_.iterator.collect {
-      case (tokenId, size) if size > 0 => Position(asset = tokenId, size = size)
-    }.toList)
+    portfolioRef
+      .get
+      .map(_.iterator.collect {
+        case (tokenId, size) if size > 0 => Position(asset = tokenId, size = size)
+      }.toList)
 
   /** Limit buy: matches whatever is in the book at price ≤ `price`. Remainder is dropped. */
   override def buyOrder(tokenId: String, amount: BigDecimal, price: BigDecimal): F[Unit] = {
@@ -150,13 +141,13 @@ private class SimulatedTradingClient[F[_]: Async](
     for {
       portfolio <- portfolioRef.get
       shares <- portfolio.toList.traverse {
-                  case (tokenId, size) =>
-                    realClient.ordersList(tokenId).map { book =>
-                      val bestBid =
-                        book.collect { case b: BuyOrder => b.price }.maxOption.getOrElse(BigDecimal(0))
-                      size * bestBid
-                    }
-                }
+        case (tokenId, size) =>
+          realClient.ordersList(tokenId).map { book =>
+            val bestBid =
+              book.collect { case b: BuyOrder => b.price }.maxOption.getOrElse(BigDecimal(0))
+            size * bestBid
+          }
+      }
       cash <- balanceRef.get
     } yield cash + shares.sum
 
@@ -224,6 +215,6 @@ object SimulatedTradingClient {
       portfolioRef <- Ref.of[F, Map[String, BigDecimal]](initialPortfolio)
       lock         <- Semaphore[F](1)
       logger       <- Slf4jLogger.create[F]
-      _            <- logger.info(s"[SIM] SimulatedTradingClient started. balance=$initialBalance portfolio=$initialPortfolio")
+      _ <- logger.info(s"[SIM] SimulatedTradingClient started. balance=$initialBalance portfolio=$initialPortfolio")
     } yield new SimulatedTradingClient[F](realClient, balanceRef, portfolioRef, lock, logger)
 }

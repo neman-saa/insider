@@ -5,4 +5,5 @@ import org.http4s.Uri
 package object client {
   final val GammaApiHost = Uri.unsafeFromString("https://gamma-api.polymarket.com")
   final val DataApiHost  = Uri.unsafeFromString("https://data-api.polymarket.com")
+  final val ClobApiHost = Uri.unsafeFromString("https://clob.polymarket.com")
 }
