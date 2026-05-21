@@ -47,8 +47,11 @@ object Main extends IOApp.Simple {
       client          <- EmberClientBuilder.default[IO].withTimeout(5.minutes).withIdleConnectionTime(5.minutes).build
       eventClient     <- EventsClientImpl.of[IO](client).toResource
       transfersClient <- TransfersClientImpl.of[IO](client, pool).toResource
-      tradingClient   <- TradingClientImpl.of[IO](client, config.polymarket).toResource
-      simulatedTradingClient <- SimulatedTradingClient.of[IO](tradingClient, 1000, Map.empty).toResource
+      realTradingClient <- TradingClientImpl.of[IO](client, config.polymarket).toResource
+      tradingClient     <- SimulatedTradingClient.of[IO](
+        realClient = realTradingClient,
+        initialBalance = BigDecimal(1000),
+      ).toResource
 
       marketsImpl <- MarketsImpl.of[IO](transactor).toResource
       eventsImpl  <- EventsImpl.of[IO](transactor).toResource
@@ -70,7 +73,7 @@ object Main extends IOApp.Simple {
       tgBackend <- HttpClientCatsBackend.resource[IO]()
       insiderBot = new InsiderTelegramBot[IO](config.telegram.botToken, config.telegram.chatId, tgBackend)(
         followTokens,
-        simulatedTradingClient
+        tradingClient
       )
       _ <- runForeverTgPolling(insiderBot).start.toResource
 
@@ -85,7 +88,7 @@ object Main extends IOApp.Simple {
 
       trader <- ScoreVectorTrader
         .of(
-          simulatedTradingClient,
+          tradingClient,
           tokensInfoRegistry,
           opAuditor,
           config.trader,
