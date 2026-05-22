@@ -13,6 +13,7 @@ import org.github.insider.realtime.traders.scorevector.OperationAuditLog.{BuyAud
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import scala.annotation.tailrec
+import scala.math.BigDecimal
 import scala.util.Try
 
 class ScoreVectorTrader[F[_]: Async](
@@ -125,7 +126,7 @@ class ScoreVectorTrader[F[_]: Async](
       tokenInfo       <- tokensInfoRegistry.getTokenInfo(sellCandidate.tokenId)
       sellOrderResult <- tradingClient.sell(sellCandidate.tokenId, sellCandidate.size, minPrice = None)
     } yield sellOrderResult match {
-      case SellOrderResult(0, 0) => none
+      case SellOrderResult(amount, totalPrice) if amount <= BigDecimal(0) && totalPrice <= BigDecimal(0) => none
       case _ =>
         SellAuditLog(
           tokenId              = sellCandidate.tokenId,
@@ -211,7 +212,7 @@ class ScoreVectorTrader[F[_]: Async](
       tokenInfo      <- tokensInfoRegistry.getTokenInfo(buyCandidate.tokenId)
       buyOrderResult <- tradingClient.buy(buyCandidate.tokenId, buyCandidate.money, buyCandidate.maxPrice)
     } yield buyOrderResult match {
-      case BuyOrderResult(0, 0) => none
+      case BuyOrderResult(amount, totalPrice) if amount <= BigDecimal(0) && totalPrice <= BigDecimal(0) => none
       case _ =>
         BuyAuditLog(
           tokenId              = buyCandidate.tokenId,
