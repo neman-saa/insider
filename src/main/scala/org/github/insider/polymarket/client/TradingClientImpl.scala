@@ -305,7 +305,7 @@ private class TradingClientImpl[F[_]: Async](
         other.as[Json].flatMap { json =>
           val error = json.findAllByKey("error").headOption.flatMap(_.asString).getOrElse("Unknown error")
           logger.error(s"Unsuccessful response received while fetching total portfolio value: $error") >>
-            Async[F].raiseError(new Throwable(error))
+            List.empty[Order].pure[F]
         }
     }
   }
