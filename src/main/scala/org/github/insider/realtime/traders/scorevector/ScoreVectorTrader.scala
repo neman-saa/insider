@@ -7,7 +7,7 @@ import org.github.insider.polymarket.client.TradingClient
 import org.github.insider.realtime.traders.TraderConfig
 import org.typelevel.log4cats.Logger
 import cats.syntax.all._
-import org.github.insider.polymarket.domain.Position
+import org.github.insider.polymarket.domain.{BuyOrderResult, Position, SellOrderResult}
 import org.github.insider.realtime.tokens.{EffectiveTokenInfo, TokenId, TokenInfo, TokensInfoRegistry}
 import org.github.insider.realtime.traders.scorevector.OperationAuditLog.{BuyAuditLog, SellAuditLog}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
@@ -124,15 +124,19 @@ class ScoreVectorTrader[F[_]: Async](
       now             <- Clock[F].realTimeInstant
       tokenInfo       <- tokensInfoRegistry.getTokenInfo(sellCandidate.tokenId)
       sellOrderResult <- tradingClient.sell(sellCandidate.tokenId, sellCandidate.size, minPrice = None)
-    } yield SellAuditLog(
-      tokenId              = sellCandidate.tokenId,
-      momentScore          = tokenInfo.map(_.score),
-      totalPrice           = sellOrderResult.totalPrice,
-      totalShares          = sellOrderResult.amount,
-      prevSingleTokenPrice = tokenInfo.map(_.price),
-      singleTokenPrice     = sellOrderResult.totalPrice / (sellOrderResult.amount / BigDecimal(1_000_000)),
-      timestamp            = now,
-    ).some
+    } yield sellOrderResult match {
+      case SellOrderResult(0, 0) => none
+      case _ =>
+        SellAuditLog(
+          tokenId              = sellCandidate.tokenId,
+          momentScore          = tokenInfo.map(_.score),
+          totalPrice           = sellOrderResult.totalPrice,
+          totalShares          = sellOrderResult.amount,
+          prevSingleTokenPrice = tokenInfo.map(_.price),
+          singleTokenPrice     = sellOrderResult.totalPrice / (sellOrderResult.amount / BigDecimal(1_000_000)),
+          timestamp            = now,
+        ).some
+    }
 
     sellAction.handleErrorWith { error =>
       logger.error(error)(s"Unsuccessful sell operation for $sellCandidate") as none[SellAuditLog]
@@ -206,15 +210,19 @@ class ScoreVectorTrader[F[_]: Async](
       now            <- Clock[F].realTimeInstant
       tokenInfo      <- tokensInfoRegistry.getTokenInfo(buyCandidate.tokenId)
       buyOrderResult <- tradingClient.buy(buyCandidate.tokenId, buyCandidate.money, buyCandidate.maxPrice)
-    } yield BuyAuditLog(
-      tokenId              = buyCandidate.tokenId,
-      momentScore          = tokenInfo.map(_.score),
-      totalPrice           = buyOrderResult.totalPrice,
-      totalShares          = buyOrderResult.amount,
-      prevSingleTokenPrice = tokenInfo.map(_.price),
-      singleTokenPrice     = buyOrderResult.totalPrice / (buyOrderResult.amount / BigDecimal(1_000_000)),
-      timestamp            = now,
-    ).some
+    } yield buyOrderResult match {
+      case BuyOrderResult(0, 0) => none
+      case _ =>
+        BuyAuditLog(
+          tokenId              = buyCandidate.tokenId,
+          momentScore          = tokenInfo.map(_.score),
+          totalPrice           = buyOrderResult.totalPrice,
+          totalShares          = buyOrderResult.amount,
+          prevSingleTokenPrice = tokenInfo.map(_.price),
+          singleTokenPrice     = buyOrderResult.totalPrice / (buyOrderResult.amount / BigDecimal(1_000_000)),
+          timestamp            = now,
+        ).some
+    }
 
     buyAction.handleErrorWith { error =>
       logger.error(error)(s"Unsuccessful buy operation for $buyCandidate") as none[BuyAuditLog]

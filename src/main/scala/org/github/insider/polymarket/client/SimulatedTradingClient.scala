@@ -51,7 +51,7 @@ private class SimulatedTradingClient[F[_]: Async](
         asks  = book.collect { case s: SellOrder => s }.sortBy(_.price)
         fill  = walkAsks(asks, money, maxPrice)
         _ <-
-          if (fill.size <= 0)
+          if (fill.size <= BigDecimal(0))
             logger.warn(
               s"[SIM] BUY $tokenId no fill: money=$money maxPrice=$maxPrice balance=$bal asks=${asks.size}"
             )
@@ -82,7 +82,7 @@ private class SimulatedTradingClient[F[_]: Async](
               bids  = book.collect { case b: BuyOrder => b }.sortBy(o => -o.price)
               fill  = walkBids(bids, toSell, minPrice)
               _ <-
-                if (fill.size <= 0)
+                if (fill.size <= BigDecimal(0))
                   logger.warn(
                     s"[SIM] SELL $tokenId no liquidity: requested=$toSell minPrice=$minPrice bids=${bids.size}"
                   )
