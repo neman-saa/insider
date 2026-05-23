@@ -119,7 +119,8 @@ object OperationsAuditRepository {
         |   total_shares, 
         |   prev_single_token_price, 
         |   single_token_price,
-        |   timestamp
+        |   timestamp,
+        |   recent_moment_score
         |FROM operations_audit
         |""".stripMargin
   }
