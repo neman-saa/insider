@@ -41,7 +41,8 @@ object OperationsAuditRepository {
         |   total_shares, 
         |   prev_single_token_price, 
         |   single_token_price,
-        |   timestamp
+        |   timestamp,
+        |   recent_moment_score
         |)
         |VALUES (
         |   ${auditLog.tokenId}, 
@@ -51,14 +52,15 @@ object OperationsAuditRepository {
         |   ${auditLog.totalShares}, 
         |   ${auditLog.prevSingleTokenPrice}, 
         |   ${auditLog.singleTokenPrice}, 
-        |   ${auditLog.timestamp}
+        |   ${auditLog.timestamp},
+        |   ${auditLog.recent_moment_score}
         |)
         |""".stripMargin
 
     override def selectAll: F[List[OperationAuditLog]] =
       selectAllQuery
         .query[
-          (String, Side, Option[BigDecimal], BigDecimal, BigDecimal, Option[BigDecimal], BigDecimal, ZonedDateTime)
+          (String, Side, Option[BigDecimal], BigDecimal, BigDecimal, Option[BigDecimal], BigDecimal, ZonedDateTime, BigDecimal)
         ]
         .map[OperationAuditLog] {
           case (
@@ -69,7 +71,8 @@ object OperationsAuditRepository {
                 totalShares,
                 prevSingleTokenPrice,
                 singleTokenPrice,
-                timestamp
+                timestamp,
+                recentMomentScore,
               ) =>
             OperationAuditLog.BuyAuditLog(
               tokenId,
@@ -78,7 +81,8 @@ object OperationsAuditRepository {
               totalShares,
               prevSingleTokenPrice,
               singleTokenPrice,
-              timestamp.toInstant
+              timestamp.toInstant,
+              recentMomentScore
             )
           case (
                 tokenId,
@@ -88,7 +92,8 @@ object OperationsAuditRepository {
                 totalShares,
                 prevSingleTokenPrice,
                 singleTokenPrice,
-                timestamp
+                timestamp,
+                recentMomentScore
               ) =>
             OperationAuditLog.SellAuditLog(
               tokenId,
@@ -97,7 +102,8 @@ object OperationsAuditRepository {
               totalShares,
               prevSingleTokenPrice,
               singleTokenPrice,
-              timestamp.toInstant
+              timestamp.toInstant,
+              recentMomentScore
             )
         }
         .to[List]

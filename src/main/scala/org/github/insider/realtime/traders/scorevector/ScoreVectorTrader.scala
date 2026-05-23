@@ -124,6 +124,7 @@ class ScoreVectorTrader[F[_]: Async](
     val sellAction = for {
       now             <- Clock[F].realTimeInstant
       tokenInfo       <- tokensInfoRegistry.getTokenInfo(sellCandidate.tokenId)
+      recentScore     <- tokensInfoRegistry.getRecentTokenScore(sellCandidate.tokenId)
       sellOrderResult <- tradingClient.sell(sellCandidate.tokenId, sellCandidate.size, minPrice = None)
     } yield sellOrderResult match {
       case SellOrderResult(amount, totalPrice) if amount <= BigDecimal(0) && totalPrice <= BigDecimal(0) => none
@@ -136,6 +137,7 @@ class ScoreVectorTrader[F[_]: Async](
           prevSingleTokenPrice = tokenInfo.map(_.price),
           singleTokenPrice     = sellOrderResult.totalPrice / (sellOrderResult.amount / BigDecimal(1_000_000)),
           timestamp            = now,
+          recent_moment_score  = recentScore
         ).some
     }
 
@@ -211,6 +213,7 @@ class ScoreVectorTrader[F[_]: Async](
       now            <- Clock[F].realTimeInstant
       tokenInfo      <- tokensInfoRegistry.getTokenInfo(buyCandidate.tokenId)
       buyOrderResult <- tradingClient.buy(buyCandidate.tokenId, buyCandidate.money, buyCandidate.maxPrice)
+      recentScore    <- tokensInfoRegistry.getRecentTokenScore(buyCandidate.tokenId)
     } yield buyOrderResult match {
       case BuyOrderResult(amount, totalPrice) if amount <= BigDecimal(0) && totalPrice <= BigDecimal(0) => none
       case _ =>
@@ -222,7 +225,9 @@ class ScoreVectorTrader[F[_]: Async](
           prevSingleTokenPrice = tokenInfo.map(_.price),
           singleTokenPrice     = buyOrderResult.totalPrice / (buyOrderResult.amount / BigDecimal(1_000_000)),
           timestamp            = now,
+          recent_moment_score  = recentScore
         ).some
+
     }
 
     buyAction.handleErrorWith { error =>

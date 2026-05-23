@@ -22,6 +22,8 @@ sealed trait OperationAuditLog {
   def prevSingleTokenPrice: Option[BigDecimal]
 
   def singleTokenPrice: BigDecimal
+
+  def recent_moment_score: BigDecimal
 }
 
 object OperationAuditLog {
@@ -34,6 +36,7 @@ object OperationAuditLog {
     prevSingleTokenPrice: Option[BigDecimal],
     singleTokenPrice: BigDecimal,
     timestamp: Instant,
+    recent_moment_score: BigDecimal,
   ) extends OperationAuditLog {
     override def side: Side = Side.Buy
   }
@@ -46,6 +49,7 @@ object OperationAuditLog {
     prevSingleTokenPrice: Option[BigDecimal],
     singleTokenPrice: BigDecimal,
     timestamp: Instant,
+    recent_moment_score: BigDecimal,
   ) extends OperationAuditLog {
     override def side: Side = Sell
   }

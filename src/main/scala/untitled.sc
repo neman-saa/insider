@@ -1,1 +1,1 @@
-BigDecimal(0)/BigDecimal(0)
+List(1,2,3,4,5).groupBy(identity)

@@ -27,7 +27,7 @@ final class TokensInfoRegistry[F[_]: Sync] private (
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
   ): F[List[TokenInfo]] = {
     for {
-      _             <- updateRecentScoreChanges(trades, leaderboard)
+      _             <- updateRecentScoreChanges(trades, leaderboard, tokensMetaInfo)
       updatedTokens <- updateRegistry(trades, tokensMetaInfo, leaderboard)
     } yield updatedTokens
   }
@@ -35,29 +35,33 @@ final class TokensInfoRegistry[F[_]: Sync] private (
   private def updateRecentScoreChanges(
     trades: List[Trade],
     leaderboard: Map[HexAddress, AdvancedLeaderboardEntry],
+    tokensMetaInfo: Map[TokenId, TokenMetaInfo]
   ): F[Unit] = {
     val batchScoreChanges: List[Map[TokenId, BigDecimal]] =
       trades.groupBy(_.blockNum).toList.sortBy { case (blockNum, _) => blockNum }.map {
         case (_, blockTrades) =>
           blockTrades
             .flatMap { trade =>
-              leaderboard.get(HexAddress(trade.makerAddress)).map { entry =>
-                val score =
+              for {
+                entry    <- leaderboard.get(HexAddress(trade.makerAddress))
+                metaInfo <- tokensMetaInfo.get(trade.tokenId)
+
+                score =
                   trade.totalPrice / entry.avgBuy * entry.score / entry.totalLeaderboardScore * entry.totalLeaderboardSize
 
-                trade.tokenId -> score * trade.side.sign
-              }
+              } yield List(
+                trade.tokenId            -> score * trade.side.sign,
+                metaInfo.oppositeTokenId -> -score * trade.side.sign
+              )
             }
+            .flatten
             .groupMapReduce { case (tokenId, _) => tokenId } { case (_, score) => score }(_ + _)
       }
 
     recentScoreChangesR.update { allChanges =>
-      val resizedBatchScoreChanges =
-        batchScoreChanges.drop(Math.max(batchScoreChanges.length - recentScoreChangesBlocksLength, 0))
       val toDrop =
-        Math.min(0, allChanges.length + resizedBatchScoreChanges.length - recentScoreChangesBlocksLength)
-
-      allChanges.drop(toDrop).appendedAll(resizedBatchScoreChanges)
+        Math.min(0, allChanges.length + batchScoreChanges.length - recentScoreChangesBlocksLength)
+      allChanges.appendedAll(batchScoreChanges).drop(toDrop)
     }
   }
 
@@ -188,13 +192,20 @@ final class TokensInfoRegistry[F[_]: Sync] private (
       .map(_.flatten)
   } yield infos
 
+  def getRecentTokenScore(tokenId: TokenId): F[BigDecimal] = for {
+    recentScores <- recentScoreChanges
+    res           = recentScores.toList.filter { case (id, _) => id == tokenId }.map(_._2).sum
+  } yield res
+
   def recentScoreChangesLength: F[Int] =
     recentScoreChangesR.get.map(_.length)
 
   def recentScoreChanges: F[Map[TokenId, BigDecimal]] = {
     for {
-      recentScoreChanges      <- recentScoreChangesR.get
-      summedRecentScoreChanges = recentScoreChanges.flatten.groupBy(_._1).view.mapValues(_.map(_._2).sum).toMap
+      recentScoreChanges <- recentScoreChangesR.get
+      summedRecentScoreChanges = recentScoreChanges
+        .flatMap(_.toList)
+        .groupMapReduce { case (tokenId, _) => tokenId } { case (_, score) => score }(_ + _)
     } yield summedRecentScoreChanges
   }
 
